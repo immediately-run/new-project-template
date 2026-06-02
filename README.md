@@ -42,6 +42,25 @@ The included page shows the core patterns: a data array mapped to cards
 (`hooks/useTheme.ts` → `components/ThemeSwitch.tsx`), and local React state
 (`components/Counter.tsx`).
 
+## Filesystem access (`fs`)
+
+immediately.run apps can read and write a filesystem by importing `fs` (async
+only — `fs.promises.*` and callback style). This template has local-dev support
+for it built in via [`@immediately-run/dev-fs`](https://github.com/immediately-run/dev-fs),
+a Vite plugin (already wired into `vite.config.ts`) that bridges the same
+filesystem to your real local disk during `vite dev`. See that repo for the
+supported API and details.
+
+```ts
+import fs from 'fs'
+
+await fs.promises.writeFile('/data/notes.txt', 'hello', 'utf8')
+const text = await fs.promises.readFile('/data/notes.txt', 'utf8')
+```
+
+`main.tsx` runs a one-off round-trip smoke test in dev — check the browser
+console for the `[dev-fs]` group, and delete it freely.
+
 ## The rules that keep it working on immediately.run
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full list. The essentials:
