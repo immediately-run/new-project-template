@@ -19,6 +19,42 @@ Try this template on [immediately.run](https://immediately.run/present/github/im
 3. `npm run dev` and start editing `src/App.tsx`.
 4. Push to GitHub and open it on immediately.run with the link above.
 
+## Fast loading on immediately.run (auto-cache)
+
+immediately.run normally reads your sources from the GitHub API, which is slow
+and rate-limited for anonymous visitors. This template ships a GitHub Action
+([`.github/workflows/cache.yml`](./.github/workflows/cache.yml)) that, on every
+push to `main`, builds a pre-cached zip of your repo and publishes it to your
+repo's **own GitHub Pages**. immediately.run finds it automatically at
+`https://<owner>.github.io/<repo>/cached_repositories/main.zip` and loads from
+there — falling back to the API if it's missing.
+
+The cache also embeds a manifest sidecar, so visitors can push edits back to
+GitHub even when the app was loaded from the zip.
+
+**One-time setup:** in your repo, go to **Settings → Pages → Build and deployment**
+and set **Source** to **GitHub Actions**. Push to `main` and the workflow does
+the rest. (The cache may lag a push by up to ~10 minutes of GitHub Pages CDN
+caching.)
+
+### Always run the newest commit
+
+By default the cached version is served even if it's a few minutes behind
+`main`. If your app must always reflect the very latest commit, add this to
+`package.json`:
+
+```jsonc
+{
+  "immediately.run": {
+    "requireLatest": true
+  }
+}
+```
+
+immediately.run still boots instantly from the cache, then checks in the
+background (one API request) whether the cache is current and, if not, reloads
+from GitHub.
+
 ## How it's organized
 
 immediately.run renders the **default export of `src/App.tsx`** — that's the
