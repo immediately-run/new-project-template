@@ -104,6 +104,48 @@ new code as if they're enforced and it will keep working as they land.)
    `cancelled`; capabilities can be absent on a fork of your app. Degrade
    features, don't crash.
 
+## Editing: delegate to the platform editor
+
+**Your app's default text/code/file editing experience is the platform editor,
+not a bespoke in-app editor.** When the thing the user edits *is* a file (a
+Markdown/MDX note, a JSON config, a source module, a CSV), hand that file to the
+platform's editing surface instead of shipping your own `<textarea>` or code
+editor. This is the same instinct as not reimplementing sign-in or PR review:
+there is already a good, forkable, mobile-capable, agent-readable editor — use it.
+(Full rationale and the proposed platform additions are in
+`docs/specs/EDITOR_FIRST_EDITING_SPEC.md`.)
+
+1. **Edit a file in one of your mounts via the `edit-file` task.** Delegate a
+   capability for exactly that one file; the host opens the editor and tears the
+   delegation down when done. No consent prompt — you're narrowing a grant you
+   already hold:
+   ```ts
+   import { invokeTask, capFile } from '@immediately-run/sdk';
+   await invokeTask('edit-file', {
+     file: capFile({ mountId: 'space:abc', relPath: 'notes/idea.mdx' }, { mode: 'rw' }),
+   });
+   ```
+   This is exactly how the whiteboard's "Open source" button works.
+2. **Offer "edit" as an affordance on the item, not a mode of your app.** Select
+   an object / focus a row → an edit icon that opens *that* file. Keep your
+   run-mode UI free of editor chrome (run-mode comes first).
+3. **Gate the affordance on writability.** Show it only when the mount is `rw`;
+   re-evaluate on `onMountsChange` and hide it on a role downgrade. Never show a
+   button that comes back `read-only`/`forbidden`, and never surface `EROFS` as UX.
+4. **A few typed fields is a form, not an editor.** An inspector that sets a
+   color, tags, or a lock toggle should be inline UI. Reach for the platform
+   editor for the free-form body / the whole file.
+5. **Build a real in-app editor only with a stated reason** — the content isn't a
+   file the platform editor can edit (freehand drawing, a node graph,
+   direct-manipulation geometry), or a measured UX need the platform editor can't
+   meet. Write the reason down; convenience is not a reason.
+6. **Known gaps (don't paper over them with a `<textarea>`):** an app running in
+   *present* mode can't yet summon the edit experience on its **own source**, and
+   opening a specific mounted file in the *main* editor (vs. the `edit-file`
+   overlay) from a standalone app isn't supported yet. Both are specified as
+   proposed deltas in `EDITOR_FIRST_EDITING_SPEC.md` §6; until they land, rely on
+   the `edit-file` task and the host's edit experience rather than rolling your own.
+
 ## Verify before you're done
 
 ```bash
