@@ -35,9 +35,10 @@ local `vite dev` — the most common silent failure.
 
 `.github/workflows/cache.yml` publishes a pre-cached zip of this repo to its own
 GitHub Pages on each push to `main`, so immediately.run loads fast and within
-anonymous rate limits. Pages is **self-provisioned** on the first run when the org
-secret `PAGES_ENABLEMENT_TOKEN` (Pages: write) is set; otherwise enable it once via
-Pages **Source: GitHub Actions** in repo settings. Don't move the cache to a different path or hostname — the client
+anonymous rate limits. Pages is **self-provisioned** on the first run when the org's
+deploy GitHub App (Pages + Administration: write) and its `DEPLOY_APP_ID` /
+`DEPLOY_APP_PRIVATE_KEY` org secrets are set; otherwise enable it once via Pages
+**Source: GitHub Actions** in repo settings. Don't move the cache to a different path or hostname — the client
 discovers it by convention at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip`.
 

@@ -32,12 +32,12 @@ there — falling back to the API if it's missing.
 The cache also embeds a manifest sidecar, so visitors can push edits back to
 GitHub even when the app was loaded from the zip.
 
-**Setup:** push to `main` and the workflow does the rest. If the
-immediately-run org has set the `PAGES_ENABLEMENT_TOKEN` organization secret
-(a token with **Pages: write**), the workflow **enables Pages for you** on the
-first run — no manual step. Otherwise, do it once: **Settings → Pages → Build and
-deployment → Source: GitHub Actions**. (The cache may lag a push by up to ~10
-minutes of GitHub Pages CDN caching.)
+**Setup:** push to `main` and the workflow does the rest. When the immediately-run
+org's **deploy GitHub App** has **Pages: write** + **Administration: write** and its
+`DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` are org secrets, the workflow **enables
+Pages for you** on the first run — no manual step. Otherwise, do it once:
+**Settings → Pages → Build and deployment → Source: GitHub Actions**. (The cache may
+lag a push by up to ~10 minutes of GitHub Pages CDN caching.)
 
 ### Always run the newest commit
 
