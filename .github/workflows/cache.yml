@@ -10,6 +10,15 @@
 #
 # Pages is auto-provisioned by the `actions/configure-pages` step below
 # (enablement: true), so no manual Settings → Pages step is needed on a fresh repo.
+#
+# Self-provisioning needs a token that may CREATE the Pages site: the default
+# workflow `GITHUB_TOKEN` cannot (the enablement API answers "Resource not
+# accessible by integration" on a brand-new repo). Set an **organization secret**
+# `PAGES_ENABLEMENT_TOKEN` — a fine-grained PAT or GitHub App installation token
+# with **Pages: write** (and Administration: write) on the org's repos — and the
+# configure-pages step below uses it, falling back to `GITHUB_TOKEN` when the
+# secret is absent (existing repos with Pages already on are unaffected).
+# See ZIP_CACHE_AUTOMATION_SPEC §8.
 
 name: Cache for immediately.run
 
@@ -47,9 +56,17 @@ jobs:
       # Auto-provision GitHub Pages so the deploy job can publish even on a
       # freshly-created repo. Without this, `deploy-pages` 404s every run until
       # someone manually flips Settings → Pages → Source: GitHub Actions.
+      #
+      # `token`: enabling Pages on a fresh repo needs more than the workflow
+      # GITHUB_TOKEN carries — use the org secret `PAGES_ENABLEMENT_TOKEN`
+      # (Pages: write) when present, else fall back to GITHUB_TOKEN so repos that
+      # already have Pages enabled keep working unchanged. The token is scoped to
+      # THIS step only (not exposed to the cache-zip build), so a compromised
+      # downstream action can't read it.
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
         with:
           enablement: true
+          token: ${{ secrets.PAGES_ENABLEMENT_TOKEN || github.token }}
 
       - name: Build cache zip
         run: |
