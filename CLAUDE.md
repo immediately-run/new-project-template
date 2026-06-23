@@ -63,6 +63,26 @@ default; a light theme is wired via `data-theme="light"` on `<html>`.
 - For icons beyond the unicode set (`→ ★ ● ☀ ☾`), use
   [Lucide](https://lucide.dev) at 16–24px, `currentColor`. No emoji.
 
+## Finding the SDK API (read this before guessing imports)
+
+Everything the platform offers comes from `@immediately-run/sdk`. Don't guess
+export names or signatures — look them up. The package ships full API docs,
+fetchable in one request and optimized for both humans and coding agents:
+
+- **`llms.txt`** — <https://immediately-run.github.io/immediately-run-sdk/llms.txt> —
+  a concise map of every export grouped by module, with its kind, import path,
+  and a one-line description. **Start here.**
+- **`api.json`** — <https://immediately-run.github.io/immediately-run-sdk/api.json> —
+  the complete TypeDoc model (exact signatures, parameters, types) when you need
+  more than the one-liners.
+- **HTML reference** — <https://immediately-run.github.io/immediately-run-sdk/> —
+  human-browsable.
+
+Once installed, `node_modules/@immediately-run/sdk` ships `.d.ts` carrying the
+same JSDoc, so your editor/agent reads the typed API inline with no network. All
+exports are importable from the package root (`@immediately-run/sdk`) or a
+per-module subpath (`@immediately-run/sdk/hooks`).
+
 ## Platform security model (what your app can and can't do)
 
 Your app runs in a **sandboxed iframe with an opaque origin**. The rules below
