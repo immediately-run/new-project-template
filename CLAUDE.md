@@ -176,3 +176,38 @@ npm run lint    # must pass — this is the cheapest proof the Fast Refresh rule
 ```
 
 Then eyeball the page (`npm run dev`) and click any interactive controls.
+
+## Debugging on immediately.run (not just `vite dev`)
+
+`vite dev` proves your app renders, but the failure mode this whole file warns about
+— *"works locally, breaks on immediately.run"* — only shows up **running inside the
+host**: the sandboxed iframe, the SDK channel, the capability gate. Debug there too.
+
+- **Drive a real browser with Chrome DevTools MCP.** The `mcp__chrome-devtools__*`
+  tools navigate the page, take an accessibility **snapshot** (element `uid`s to
+  click/fill), run JS with **`evaluate_script`**, and read the **console** +
+  **network** — which is where SDK `{ ok: false, code }` replies and sandbox errors
+  actually surface. Reproduce, then `list_console_messages` /
+  `list_network_requests`; don't guess from the rendered DOM alone.
+- **Run your app *on the host*, with no commit, via the `local` provider.** Mount
+  your working tree into the real host and edit live:
+  ```bash
+  immediately.run dev . --origin https://local.immediately.run --json
+  # → open the printed /edit/local/<name>-<hash8>/.../live#ir-endpoint=…&ir-token=… link
+  ```
+  Edits on disk hot-reload in the host preview, so you exercise the *real* SDK +
+  capability path (consent prompts, `forbidden`, mounts) instead of a local stub. A
+  dev-served app gets a **fresh appKey** with no prior grants — handy for testing
+  your first-run consent flow honestly. (`@immediately-run/cli`, Node ≥ 18, git
+  repo.)
+- **Always use `https://local.immediately.run`, never `localhost`** — config is
+  keyed by hostname and only the `*.immediately.run` origin is fully wired
+  (sandbox + backend + auth allowlist).
+- **A passkey / Touch-ID prompt can't be automated** — the first secret unseal or
+  sign-in raises a native dialog; hand that step to a human, or reload after it's
+  cached.
+
+> The platform repo also ships a `window.__irTest` host hook for scripting
+> space/share drills, but that is **host-internal** (dev builds of immediately.run
+> itself) — not something your app uses or should rely on. The full platform-side
+> workflow lives in the docs repo's `tutorials/browser_debugging/`.
