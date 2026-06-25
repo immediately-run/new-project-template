@@ -63,9 +63,14 @@ jobs:
       # Skipped when the App secrets aren't set, so the step below falls back to
       # GITHUB_TOKEN. The token is an output consumed only by configure-pages; the
       # cache-zip build never sees it.
+      # `secrets` cannot be referenced in a step `if:` (GitHub rejects the
+      # workflow at parse time — "Unrecognized named-value: 'secrets'"). Surface
+      # the App id through `env` first, then gate on `env`, which IS allowed.
       - name: Mint Pages-enablement token
         id: pages-token
-        if: ${{ secrets.DEPLOY_APP_ID != '' }}
+        env:
+          DEPLOY_APP_ID: ${{ secrets.DEPLOY_APP_ID }}
+        if: ${{ env.DEPLOY_APP_ID != '' }}
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ secrets.DEPLOY_APP_ID }}
