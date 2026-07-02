@@ -32,12 +32,25 @@ there — falling back to the API if it's missing.
 The cache also embeds a manifest sidecar, so visitors can push edits back to
 GitHub even when the app was loaded from the zip.
 
-**Setup:** push to `main` and the workflow does the rest. When the immediately-run
-org's **deploy GitHub App** has **Pages: write** + **Administration: write** and its
-`DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` are org secrets, the workflow **enables
-Pages for you** on the first run — no manual step. Otherwise, do it once:
-**Settings → Pages → Build and deployment → Source: GitHub Actions**. (The cache may
-lag a push by up to ~10 minutes of GitHub Pages CDN caching.)
+### Enable the cache (one-time)
+
+For a repo in your **own** GitHub account or org, there's a single one-time step:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. Push to `main` (or re-run the **Cache for immediately.run** workflow from the
+   Actions tab).
+
+That's it — no tokens and no secrets to configure. The workflow builds the zip and
+publishes it to your repo's Pages; immediately.run finds it automatically on the
+next load. The first publish can lag a push by up to ~10 minutes of GitHub Pages
+CDN caching. If the app still loads from the API, check that the workflow run
+succeeded and that Pages shows a green **github-pages** deployment.
+
+> **immediately-run org repos** skip even that step: the org's internal **deploy
+> GitHub App** self-provisions Pages on the first run (it holds Pages +
+> Administration write and its `DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` are org
+> secrets). That App is org-internal — repos outside the org neither have nor need
+> it, and `cache.yml` automatically falls back to the manual step above.
 
 ### Always run the newest commit
 

@@ -35,11 +35,12 @@ local `vite dev` — the most common silent failure.
 
 `.github/workflows/cache.yml` publishes a pre-cached zip of this repo to its own
 GitHub Pages on each push to `main`, so immediately.run loads fast and within
-anonymous rate limits. Pages is **self-provisioned** on the first run when the org's
-deploy GitHub App (Pages + Administration: write) and its `DEPLOY_APP_ID` /
-`DEPLOY_APP_PRIVATE_KEY` org secrets are set; otherwise enable it once via Pages
-**Source: GitHub Actions** in repo settings. Don't move the cache to a different path or hostname — the client
-discovers it by convention at
+anonymous rate limits. To enable it on a repo in your own account/org, turn Pages
+on once — **Settings → Pages → Source: GitHub Actions** — then push to `main`; no
+tokens or secrets. (immediately-run org repos self-provision Pages on the first
+run via the org's internal deploy GitHub App, which external repos don't have and
+don't need — `cache.yml` falls back to the manual step for them.) Don't move the
+cache to a different path or hostname — the client discovers it by convention at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip`.
 
 `"immediately.run": { "requireLatest": "..." }` in `package.json` controls
