@@ -22,8 +22,9 @@ function Counter() {
           </button>
         </div>
         <p className="hint">
-          useState, useEffect, fetch, localStorage — all available. Build your
-          real UI the same way.
+          useState, useEffect, fetch, the DOM — all available. Build your real
+          UI the same way. (One exception: <code>localStorage</code> throws at
+          the sandbox's opaque origin — see <code>src/hooks/useTheme.ts</code>.)
         </p>
       </div>
     </section>
