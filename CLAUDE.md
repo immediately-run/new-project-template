@@ -45,8 +45,13 @@ GitHub Pages on each push to `main`, so immediately.run loads fast and within
 anonymous rate limits. To enable it on a repo in your own account/org, turn Pages
 on once — **Settings → Pages → Source: GitHub Actions** — then push to `main`; no
 tokens or secrets. (immediately-run org repos self-provision Pages on the first
-run via the org's internal deploy GitHub App, which external repos don't have and
-don't need — `cache.yml` falls back to the manual step for them.) Don't move the
+run via the org's internal deploy GitHub App — but only when its
+`DEPLOY_APP_ID`/`DEPLOY_APP_PRIVATE_KEY` org secrets are visible to the repo;
+they are currently scoped to selected repositories, so a fresh org repo fails
+with "Create Pages site failed: Resource not accessible by integration" until
+an owner widens the scope (R3-410). Fallback, also the path for external repos:
+`gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow` then
+`gh workflow run cache.yml` — or the manual Settings → Pages step.) Don't move the
 cache to a different path or hostname — the client discovers it by convention at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip`.
 

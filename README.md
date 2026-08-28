@@ -46,11 +46,27 @@ next load. The first publish can lag a push by up to ~10 minutes of GitHub Pages
 CDN caching. If the app still loads from the API, check that the workflow run
 succeeded and that Pages shows a green **github-pages** deployment.
 
-> **immediately-run org repos** skip even that step: the org's internal **deploy
-> GitHub App** self-provisions Pages on the first run (it holds Pages +
-> Administration write and its `DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` are org
-> secrets). That App is org-internal — repos outside the org neither have nor need
-> it, and `cache.yml` automatically falls back to the manual step above.
+> **immediately-run org repos** can skip even that step — but only when the org
+> deploy App's `DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` org secrets are
+> visible to the repo. Those secrets are currently scoped to *selected*
+> repositories, so on a fresh org repo the token-mint step is skipped and
+> `configure-pages` fails with **"Create Pages site failed: Resource not
+> accessible by integration"** until an org owner widens the secret scope
+> (tracked as roadmap R3-410). Use the fallback below meanwhile. Repos outside
+> the org neither have nor need the App — the manual step above is the path.
+
+### Troubleshooting: "Create Pages site failed: Resource not accessible by integration"
+
+The workflow ran before Pages was enabled and the repo can't see the org deploy
+App secrets (or is outside the org). Enable Pages once by hand, then re-run:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+gh workflow run cache.yml
+```
+
+(Or in the browser: **Settings → Pages → Source: GitHub Actions**, then re-run
+the **Cache for immediately.run** workflow from the Actions tab.)
 
 ### Always run the newest commit
 
