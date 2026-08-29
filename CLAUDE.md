@@ -96,6 +96,49 @@ same JSDoc, so your editor/agent reads the typed API inline with no network. All
 exports are importable from the package root (`@immediately-run/sdk`) or a
 per-module subpath (`@immediately-run/sdk/hooks`).
 
+## Keep your corner controls clear of the platform pill
+
+On immediately.run the **platform pill floats over your app's top-right corner**
+(it is how the user reaches the platform menu). Anything you anchor there — a
+theme toggle, a menu button, a close affordance — can end up underneath it, and
+your app cannot measure the pill: it is host chrome, outside your iframe.
+
+The host reports the covered box on the form-factor channel, as
+`insets: { top, right, bottom, left }` in CSS px.
+
+Read it as a **rectangle per edge**: each number is the distance inward from that
+edge of your viewport where platform chrome may sit, and the chrome is in the
+**intersection** of the nonzero bands. Today that means a nonzero `top` and
+`right` with `bottom`/`left` at 0 — i.e. only the **top-right corner rectangle**
+is covered. All zeros means nothing is over you (`vite dev`, edit mode, or a host
+that does not report it — the field is additive, so it is always safe to read).
+
+**Pad the control, not the layout.** This template ships the wiring: `index.css`
+declares `--chrome-inset-top` / `--chrome-inset-right` (0 by default) and
+`nav.top .cta` pads itself by them in `App.css`. Feed them from the host, once,
+near your root:
+
+```ts
+const { insets } = useFormFactor();
+useEffect(() => {
+  const root = document.documentElement;
+  root.style.setProperty('--chrome-inset-top', `${insets.top}px`);
+  root.style.setProperty('--chrome-inset-right', `${insets.right}px`);
+}, [insets.top, insets.right]);
+```
+
+Do **not** reserve a permanent gutter or push your whole page down: apps with
+nothing in that corner should pay nothing, and full-bleed content is meant to run
+underneath it.
+
+Two caveats while this is landing. The host pushes `insets` today, but
+`useFormFactor()` does not surface it yet — the field is part of the frozen
+sandbox↔SDK wire contract and lands with a `@immediately-run/sandbox-protocol`
+release (roadmap R3-415). Until then the vars stay 0 and your layout is unchanged,
+so the wiring above is safe to write now. Separately, `chrome:read`'s overlay
+state tells you whether a *transient* platform menu is open right now — a
+different question from where chrome sits at rest.
+
 ## Platform security model (what your app can and can't do)
 
 Your app runs in a **sandboxed iframe with an opaque origin**. The rules below

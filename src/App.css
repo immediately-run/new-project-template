@@ -20,7 +20,16 @@ nav.top .logo .mark {
   background: var(--grad); transform: rotate(12deg);
   box-shadow: 0 2px 10px rgba(150,110,240,.30);
 }
-nav.top .cta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+/* The top-right control cluster — the one part of this layout the platform pill
+   can sit on top of. It pads itself by the host-reported inset (0 unless a host
+   reports one), rather than the whole nav reserving a permanent gutter: an app
+   with nothing in that corner should pay nothing, and full-bleed content is
+   meant to run under it. See `--chrome-inset-*` in index.css. */
+nav.top .cta {
+  margin-left: auto; display: flex; gap: 10px; align-items: center;
+  padding-top: var(--chrome-inset-top);
+  padding-right: var(--chrome-inset-right);
+}
 
 /* ---- buttons ---- */
 .btn {
