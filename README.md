@@ -8,9 +8,17 @@ the brand design system, with the project layout immediately.run expects.
 
 Try this template on [immediately.run](https://immediately.run/present/github/immediately-run/new-project-template/main/files/src/App.tsx)
 
-> Using this as a starting point for your own app? After you push to your repo,
-> update the link above to
-> `https://immediately.run/present/github/<owner>/<repo>/<ref>/files/src/App.tsx`.
+## After you create your own repo (2 minutes)
+
+`gh repo create --template` copies files verbatim — it does **not** rewrite
+anything that mentions this repo, so do these once:
+
+- [ ] **Replace the "Try it" link above** with your own app:
+      `https://immediately.run/present/github/<owner>/<repo>/main/files/src/App.tsx`
+- [ ] **Set your app's `<title>`** in `index.html` (it still says
+      "My immediately.run app").
+- [ ] **Name your app** in `package.json` (`"name"` + the storage starter's
+      `createSpace({ name: ... })` in `src/lib/store.ts`).
 
 ## Use this template
 

@@ -185,6 +185,77 @@ npm run lint    # must pass — this is the cheapest proof the Fast Refresh rule
 
 Then eyeball the page (`npm run dev`) and click any interactive controls.
 
+## Persistence: start from `src/lib/store.ts`
+
+Every app that keeps data re-derived the same storage pattern; it ships in the
+template now so it is copied, not rediscovered: **private settings first**
+(`openSettings()` — per-user, per-app, no prompt), **a remembered data space**
+(create once with consent, then re-open by id from settings — only the create
+path prompts), **one JSON record per file** (the platform fs is
+last-write-wins per file; records keep writes from contending and reads
+whole). `openAppStore()` handles the whole flow, degrades to an in-memory
+session when signed out or declined, and `watchRecords` uses `fs.watch`
+(remote changes ARE delivered as watch events) with a poll fallback on older
+hosts. Seeding is idempotent and the `seeded` marker is written last — see the
+StrictMode truth below.
+
+## Platform truths (facts every app here has hit; read once, save an hour)
+
+These are behaviors of the real environment, not bugs in your code. Each cost a
+builder a debugging session during the example-app program (2026-08); they are
+one line each so they get read.
+
+**Lint / React**
+
+- `eslint-plugin-react-hooks` **v7** rejects `setState` calls inside `useEffect`
+  (and `ref.current = x` during render) — v7 makes these hard errors. Derive
+  values during render instead of syncing them into state (`const x = useMemo(`
+  or plain derivation, not `useEffect(() => setX(...))`); when a component must
+  reset when an identity changes, **remount by key** (`<Panel key={id} />`), not
+  via an effect. Both patterns are the accepted resolutions.
+- React **StrictMode runs your boot effect twice** in dev — first-run seeding
+  must be idempotent. Write a `seeded` marker file **last** (after all seed
+  files) and single-flight the seed; note a one-shot `useRef` guard is *not*
+  enough (StrictMode discards the first ref, leaving a "Loading…" app forever).
+  The platform tolerates concurrent writes (a lost create-race no longer
+  `EEXIST`s), but your seed should still be order-independent.
+
+**What works in the sandbox (don't assume it doesn't)**
+
+- `window.confirm` / `window.alert` **work** in the app frame.
+- `crypto.subtle` and `crypto.getRandomValues` **work** (plus the SDK-shimmed
+  `crypto.randomBytes`).
+
+**What doesn't**
+
+- **Blob downloads are blocked** in the app frame (no `allow-downloads` on the
+  iframe) — an "export" button must copy to the clipboard / a `<textarea>`
+  instead of creating an `<a download>` URL.
+- `localStorage` — see hard rule 8 (throws on *access* at the opaque origin).
+
+**Host vs `vite dev` differences**
+
+- `useFormFactor()` reports **desktop** under `vite dev` (the host channel is
+  absent locally); only the host gives the real answer.
+- `useAuth()` **never settles** under `vite dev`, and on the host `user` is
+  `null` until the user has actually signed in — build the signed-out state as
+  a first-class UI, not an error.
+- `sdk/tasks` must be **lazy-imported** (`await import('@immediately-run/sdk/tasks')`
+  inside the code path that needs it) — the module has an eval-time side effect
+  that misbehaves under `vite dev`.
+
+**Small sharp edges**
+
+- `SandboxMount.name` is **absent right after `createSpace`** resolves — fall
+  back to your own name for the first render, don't dereference it.
+- An interactive SVG group (`<g>`) containing a `<text>` label can vanish from
+  the accessibility tree — put the accessible name/role on the `<g>` (or wrap
+  in a `<button>`) rather than relying on the text child.
+- The SDK is **pinned exactly** in `package.json` (the platform resolves the
+  pin, and a `^` range resolves to its *floor* — a stale major-minor silently).
+  A scheduled workflow here fails when the pin drifts behind npm; bump it in
+  the same PR as your app changes that need the new API.
+
 ## Debugging on immediately.run (not just `vite dev`)
 
 `vite dev` proves your app renders, but the failure mode this whole file warns about
