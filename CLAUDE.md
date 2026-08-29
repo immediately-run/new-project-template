@@ -34,6 +34,16 @@ local `vite dev` — the most common silent failure.
    is on access, not on the value) and never touch it at module scope. Treat
    persistence as optional and keep the app fully usable without it. Worked
    example: `src/hooks/useTheme.ts`.
+   **Downloading a blob works; *navigating* to one does not.** A clicked
+   `<a download href="blob:...">` saves the file — the frame carries
+   `allow-downloads` in every stance, and the opaque origin does not stop it.
+   But `location.assign(blobUrl)` / `window.open(blobUrl)` silently does nothing
+   for a type the browser would display, because the document that navigation
+   creates gets a *fresh* opaque origin and can no longer resolve the blob. (For
+   a type Chrome will not display, such as `text/csv`, it converts the
+   navigation into a download — which is why the two paths look inconsistent.)
+   So build exports on `<a download>`, and never on "open it in a tab".
+   Measured 2026-08-29 (roadmap R3-417).
 9. **MDX is only for long-form prose** (articles, guides). Structured/repeated
    data stays as typed arrays in `src/data/`. If you add `.mdx`, the Vite plugin
    and `src/mdx.d.ts` shim are already wired up.
