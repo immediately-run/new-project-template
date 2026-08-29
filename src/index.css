@@ -58,6 +58,17 @@
   --page-wash:
     radial-gradient(60% 50% at 78% 0%, rgba(178,133,242,.12), transparent 60%),
     radial-gradient(50% 40% at 12% 8%, rgba(244,154,212,.07), transparent 60%);
+
+  /* — Host-chrome insets —
+     On immediately.run the platform pill floats over your app's TOP-RIGHT
+     corner, so anything you anchor there (a theme toggle, a menu button) can
+     end up underneath it. The host reports the covered box; feed it in from
+     `useFormFactor().insets` and the rules that consume these vars below do the
+     rest. See CLAUDE.md → "Keep your corner controls clear of the platform
+     pill". Zero by default: off-host, and on any host that reports nothing,
+     your layout is untouched. */
+  --chrome-inset-top: 0px;
+  --chrome-inset-right: 0px;
 }
 
 /* ---------------------------------------------------------------- LIGHT */

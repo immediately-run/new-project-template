@@ -34,6 +34,16 @@ local `vite dev` — the most common silent failure.
    is on access, not on the value) and never touch it at module scope. Treat
    persistence as optional and keep the app fully usable without it. Worked
    example: `src/hooks/useTheme.ts`.
+   **Downloading a blob works; *navigating* to one does not.** A clicked
+   `<a download href="blob:...">` saves the file — the frame carries
+   `allow-downloads` in every stance, and the opaque origin does not stop it.
+   But `location.assign(blobUrl)` / `window.open(blobUrl)` silently does nothing
+   for a type the browser would display, because the document that navigation
+   creates gets a *fresh* opaque origin and can no longer resolve the blob. (For
+   a type Chrome will not display, such as `text/csv`, it converts the
+   navigation into a download — which is why the two paths look inconsistent.)
+   So build exports on `<a download>`, and never on "open it in a tab".
+   Measured 2026-08-29 (roadmap R3-417).
 9. **MDX is only for long-form prose** (articles, guides). Structured/repeated
    data stays as typed arrays in `src/data/`. If you add `.mdx`, the Vite plugin
    and `src/mdx.d.ts` shim are already wired up.
@@ -45,8 +55,13 @@ GitHub Pages on each push to `main`, so immediately.run loads fast and within
 anonymous rate limits. To enable it on a repo in your own account/org, turn Pages
 on once — **Settings → Pages → Source: GitHub Actions** — then push to `main`; no
 tokens or secrets. (immediately-run org repos self-provision Pages on the first
-run via the org's internal deploy GitHub App, which external repos don't have and
-don't need — `cache.yml` falls back to the manual step for them.) Don't move the
+run via the org's internal deploy GitHub App — but only when its
+`DEPLOY_APP_ID`/`DEPLOY_APP_PRIVATE_KEY` org secrets are visible to the repo;
+they are currently scoped to selected repositories, so a fresh org repo fails
+with "Create Pages site failed: Resource not accessible by integration" until
+an owner widens the scope (R3-410). Fallback, also the path for external repos:
+`gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow` then
+`gh workflow run cache.yml` — or the manual Settings → Pages step.) Don't move the
 cache to a different path or hostname — the client discovers it by convention at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip`.
 
@@ -90,6 +105,49 @@ Once installed, `node_modules/@immediately-run/sdk` ships `.d.ts` carrying the
 same JSDoc, so your editor/agent reads the typed API inline with no network. All
 exports are importable from the package root (`@immediately-run/sdk`) or a
 per-module subpath (`@immediately-run/sdk/hooks`).
+
+## Keep your corner controls clear of the platform pill
+
+On immediately.run the **platform pill floats over your app's top-right corner**
+(it is how the user reaches the platform menu). Anything you anchor there — a
+theme toggle, a menu button, a close affordance — can end up underneath it, and
+your app cannot measure the pill: it is host chrome, outside your iframe.
+
+The host reports the covered box on the form-factor channel, as
+`insets: { top, right, bottom, left }` in CSS px.
+
+Read it as a **rectangle per edge**: each number is the distance inward from that
+edge of your viewport where platform chrome may sit, and the chrome is in the
+**intersection** of the nonzero bands. Today that means a nonzero `top` and
+`right` with `bottom`/`left` at 0 — i.e. only the **top-right corner rectangle**
+is covered. All zeros means nothing is over you (`vite dev`, edit mode, or a host
+that does not report it — the field is additive, so it is always safe to read).
+
+**Pad the control, not the layout.** This template ships the wiring: `index.css`
+declares `--chrome-inset-top` / `--chrome-inset-right` (0 by default) and
+`nav.top .cta` pads itself by them in `App.css`. Feed them from the host, once,
+near your root:
+
+```ts
+const { insets } = useFormFactor();
+useEffect(() => {
+  const root = document.documentElement;
+  root.style.setProperty('--chrome-inset-top', `${insets.top}px`);
+  root.style.setProperty('--chrome-inset-right', `${insets.right}px`);
+}, [insets.top, insets.right]);
+```
+
+Do **not** reserve a permanent gutter or push your whole page down: apps with
+nothing in that corner should pay nothing, and full-bleed content is meant to run
+underneath it.
+
+Two caveats while this is landing. The host pushes `insets` today, but
+`useFormFactor()` does not surface it yet — the field is part of the frozen
+sandbox↔SDK wire contract and lands with a `@immediately-run/sandbox-protocol`
+release (roadmap R3-415). Until then the vars stay 0 and your layout is unchanged,
+so the wiring above is safe to write now. Separately, `chrome:read`'s overlay
+state tells you whether a *transient* platform menu is open right now — a
+different question from where chrome sits at rest.
 
 ## Platform security model (what your app can and can't do)
 

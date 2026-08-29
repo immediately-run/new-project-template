@@ -21,8 +21,14 @@
 #     permissions and is installed on this repo (org-wide install is simplest);
 #   - its `DEPLOY_APP_ID` + `DEPLOY_APP_PRIVATE_KEY` are **organization secrets**
 #     visible to the app repos.
-# When those secrets are absent the mint step is skipped and the step falls back
-# to `GITHUB_TOKEN` (existing repos with Pages already on are unaffected).
+# When those secrets are absent — including a fresh immediately-run org repo the
+# org secrets are not yet scoped to (their scope is "selected repositories";
+# widening is tracked as roadmap R3-410) — the mint step is skipped, the step
+# falls back to `GITHUB_TOKEN`, and on a repo without Pages it fails with
+# "Create Pages site failed: Resource not accessible by integration". Fix: enable
+# Pages once by hand (`gh api -X POST repos/<owner>/<repo>/pages -f
+# build_type=workflow`, or Settings → Pages → Source: GitHub Actions) and re-run.
+# Existing repos with Pages already on are unaffected.
 # See ZIP_CACHE_AUTOMATION_SPEC §8.
 
 name: Cache for immediately.run
