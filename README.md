@@ -54,19 +54,20 @@ next load. The first publish can lag a push by up to ~10 minutes of GitHub Pages
 CDN caching. If the app still loads from the API, check that the workflow run
 succeeded and that Pages shows a green **github-pages** deployment.
 
-> **immediately-run org repos** can skip even that step — but only when the org
-> deploy App's `DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` org secrets are
-> visible to the repo. Those secrets are currently scoped to *selected*
-> repositories, so on a fresh org repo the token-mint step is skipped and
-> `configure-pages` fails with **"Create Pages site failed: Resource not
-> accessible by integration"** until an org owner widens the secret scope
-> (tracked as roadmap R3-410). Use the fallback below meanwhile. Repos outside
-> the org neither have nor need the App — the manual step above is the path.
+> **immediately-run org repos** skip even that step. The org deploy App's
+> `DEPLOY_APP_ID` / `DEPLOY_APP_PRIVATE_KEY` secrets are scoped to **all**
+> repositories in the org, so on a fresh repo the token-mint step runs and
+> `configure-pages` provisions Pages on the very first push — no manual step at
+> all. Two repos this does *not* cover: one outside the org (no App — the manual
+> step above is the path), and a **private** one, where neither half works on the
+> Free plan — org secrets are not readable by private repos, and Pages needs a
+> public repo. An app repo should be public.
 
 ### Troubleshooting: "Create Pages site failed: Resource not accessible by integration"
 
-The workflow ran before Pages was enabled and the repo can't see the org deploy
-App secrets (or is outside the org). Enable Pages once by hand, then re-run:
+The workflow ran before Pages was enabled and the repo can't mint an
+enablement token — it is outside the `immediately-run` org, or the org deploy
+App is not installed on it. Enable Pages once by hand, then re-run:
 
 ```bash
 gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
