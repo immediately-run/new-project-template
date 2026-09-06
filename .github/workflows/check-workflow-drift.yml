@@ -1,0 +1,53 @@
+# Fails when an immediately-run app repo's `cache.yml` has drifted from this
+# template's copy.
+#
+# WHY. `cache.yml` is owned here, but every repo gets its copy BY VALUE at
+# creation and nothing updates it afterwards. By 2026-09-04 that had produced 22
+# repos whose copy predated the Pages token-mint step — none of them able to
+# self-provision Pages — and `bundle-picker`, which drifted three days after it
+# was created because its workflow was copied from a sibling repo rather than
+# from here, and served a 404 for its cache until someone looked (R3-535).
+#
+# The check compares FUNCTIONAL content only — comments and the _site/index.html
+# landing copy are excluded — so a repo may reword either without going red. See
+# scripts/check-workflow-drift.mjs for why that boundary is where it is.
+
+name: Check workflow drift
+
+on:
+  schedule:
+    - cron: '30 5 * * *'
+  # Also on any change to the workflow itself: the moment this file moves, every
+  # other repo is by definition behind, and that should be visible immediately
+  # rather than at the next nightly.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cache.yml'
+      - 'scripts/check-workflow-drift.mjs'
+      - '.github/workflows/check-workflow-drift.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # Guards the comparison itself: proves a removed step and a changed pin
+      # are both detected, so a green run cannot mean "the check stopped
+      # looking".
+      - name: Self-test the comparison
+        run: node scripts/check-workflow-drift.mjs --self-test
+
+      - name: Compare every org repo's cache.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-workflow-drift.mjs
