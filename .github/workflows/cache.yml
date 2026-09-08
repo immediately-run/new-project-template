@@ -16,10 +16,18 @@
 # installed tree.
 #
 # --bundle-packages was opt-in because "a default-on bundle could bloat the zip past the
-# host size cap". The cap is 50 MB on the response body (ZIP_CACHE_AUTOMATION_SPEC §8);
-# measured on landing-page, a bundled zip is 1.8 MB. An oversize zip is also a graceful
-# degradation rather than a break — the runtime aborts and falls through to the REST API —
-# so the cost of being wrong here is a slow boot, not a broken one.
+# host size cap". The caps are 50 MB on the response body and 250 MB decompressed
+# (ZIP_CACHE_AUTOMATION_SPEC §8). Measured on landing-page with every package sourced from
+# node_modules — 9 packages including react-dom and lucide-react's ~1800 icon entries — the
+# zip is 3.0 MB compressed / 19 MB decompressed. That is the realistic upper end for an app
+# of this shape, and it is an order of magnitude inside both caps.
+#
+# Note it is LARGER than a CDN-sourced bundle, deliberately: the CDN evaluates NODE_ENV and
+# keeps one branch, while a static build cannot know which the runtime will take, so both
+# are carried. Over-inclusion costs bytes; under-inclusion costs a blocking third-party
+# fetch at boot for the missing file. An oversize zip is also a graceful degradation rather
+# than a break — the runtime aborts and falls through to the REST API — so the cost of being
+# wrong here is a slow boot, not a broken one.
 #
 # Pages is auto-provisioned by the `actions/configure-pages` step below
 # (enablement: true), so no manual Settings → Pages step is needed on a fresh repo.
