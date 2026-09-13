@@ -34,7 +34,8 @@ and rate-limited for anonymous visitors. This template ships a GitHub Action
 ([`.github/workflows/cache.yml`](./.github/workflows/cache.yml)) that, on every
 push to `main`, builds a pre-cached zip of your repo and publishes it to your
 repo's **own GitHub Pages**. immediately.run finds it automatically at
-`https://<owner>.github.io/<repo>/cached_repositories/main.zip` and loads from
+`https://<owner>.github.io/<repo>/cached_repositories/main.zip` — or, for a
+commit-pinned library dependency, `cached_repositories/<sha>.zip` — and loads from
 there — falling back to the API if it's missing.
 
 The cache also embeds a manifest sidecar, so visitors can push edits back to
