@@ -149,6 +149,21 @@ jobs:
             --default-branch "${{ github.event.repository.default_branch }}" \
             --bundle-packages \
             --out "_site/cached_repositories/${{ github.ref_name }}.zip"
+          # A commit-pinned library mount probes cached_repositories/<ref>.zip with
+          # the pin VERBATIM (site-main COW.ts mountGitHubRepository -> cachedZipUrl;
+          # libraryFreshness.ts: a commit pin is immutable, so it is always served
+          # from the cache/REST copy), and LIBRARY_MOUNTS_SPEC §7 recommends commit
+          # pins — so a branch-keyed zip alone leaves every sha-pinned mount on the
+          # anonymous-REST fallback forever (found on R3-624: file-selector's pinned
+          # sha 404s while its main.zip is 200). Publish the pushing commit's own zip
+          # beside the branch zip: same build, same flags, second --ref/--out.
+          npx -y @immediately-run/cli@0.8.2 cache-zip \
+            --owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --ref "${{ github.sha }}" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            --bundle-packages \
+            --out "_site/cached_repositories/${{ github.sha }}.zip"
 
       # A friendly landing page so the Pages root isn't a bare 404. Optional —
       # delete it if you serve your own content from Pages. (To also host a live
