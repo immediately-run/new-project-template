@@ -64,7 +64,8 @@ Outside the org there is no App — enable Pages once with
 `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow` then
 `gh workflow run cache.yml`, or the manual Settings → Pages step.) Don't move the
 cache to a different path or hostname — the client discovers it by convention at
-`https://<owner>.github.io/<repo>/cached_repositories/main.zip`.
+`https://<owner>.github.io/<repo>/cached_repositories/main.zip` (branch-keyed) and
+`cached_repositories/<sha>.zip` (what a commit-pinned library mount probes).
 
 `"immediately.run": { "requireLatest": "..." }` in `package.json` controls
 freshness. It is a **string enum**, not a boolean: `"stale_ok"` (always serve
