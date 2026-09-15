@@ -47,6 +47,14 @@ jobs:
       - name: Self-test the comparison
         run: node scripts/check-workflow-drift.mjs --self-test
 
+      # The pin has to be servable before the sync is worth anything: a
+      # cache.yml pinning a version npm does not have turns a working zip into
+      # no zip at all, in every repo carrying it. This template's own cache run
+      # was red for four days for exactly that reason (R3-623), and the only
+      # thing that surfaced it was a failed zip run in one repo.
+      - name: Assert the pinned CLI version is published
+        run: node scripts/check-workflow-drift.mjs --check-pin
+
       - name: Compare every org repo's cache.yml
         env:
           GH_TOKEN: ${{ github.token }}
