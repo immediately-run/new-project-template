@@ -93,12 +93,25 @@ jobs:
       # cache-zip build never sees it.
       # `secrets` cannot be referenced in a step `if:` (GitHub rejects the
       # workflow at parse time — "Unrecognized named-value: 'secrets'"). Surface
-      # the App id through `env` first, then gate on `env`, which IS allowed.
+      # the App credentials through `env` first, then gate on `env`, which IS
+      # allowed.
+      #
+      # GATE ON BOTH SECRETS, not just the id. They are a PAIR, and the mint
+      # needs both. With only the id checked, a repo that has `DEPLOY_APP_ID`
+      # set and `DEPLOY_APP_PRIVATE_KEY` unset passes this gate, hands
+      # create-github-app-token an empty private key, and fails — and with no
+      # `continue-on-error` that kills the whole `build` job before `cache-zip`
+      # runs. The repo then publishes NO zip at all, instead of falling back to
+      # GITHUB_TOKEN as the comment above and the `configure-pages` comment
+      # below both promise. One credential of a pair present is exactly the
+      # half-configured case a guard exists for. (Fixed 2026-09-17; the
+      # id-only form had replicated into every repo forked from this template.)
       - name: Mint Pages-enablement token
         id: pages-token
         env:
           DEPLOY_APP_ID: ${{ secrets.DEPLOY_APP_ID }}
-        if: ${{ env.DEPLOY_APP_ID != '' }}
+          DEPLOY_APP_PRIVATE_KEY: ${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
+        if: ${{ env.DEPLOY_APP_ID != '' && env.DEPLOY_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ secrets.DEPLOY_APP_ID }}
