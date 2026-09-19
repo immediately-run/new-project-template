@@ -13,8 +13,6 @@ Try this template on [immediately.run](https://immediately.run/present/github/im
 `gh repo create --template` copies files verbatim — it does **not** rewrite
 anything that mentions this repo, so do these once:
 
-- [ ] **Replace the "Try it" link above** with your own app:
-      `https://immediately.run/present/github/<owner>/<repo>/main/files/src/App.tsx`
 - [ ] **Set your app's `<title>`** in `index.html` (it still says
       "My immediately.run app").
 - [ ] **Name your app** in `package.json` (`"name"` + the storage starter's
