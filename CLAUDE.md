@@ -215,7 +215,7 @@ there is already a good, forkable, mobile-capable, agent-readable editor — use
      file: capFile({ mountId: 'space:abc', relPath: 'notes/idea.mdx' }, { mode: 'rw' }),
    });
    ```
-   This is exactly how the whiteboard's "Open source" button works.
+   This is exactly how Lodestar's "Open source" button works.
 2. **Offer "edit" as an affordance on the item, not a mode of your app.** Select
    an object / focus a row → an edit icon that opens *that* file. Keep your
    run-mode UI free of editor chrome (run-mode comes first).
