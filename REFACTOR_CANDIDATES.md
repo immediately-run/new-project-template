@@ -36,8 +36,11 @@ status doc). **Do NOT scaffold tests in this pass** — recorded as a gap/candid
 
 ## SDK-version skew (record only)
 
-Pins `@immediately-run/sdk` at **`0.8.1`** (fleet spread: `0.2.8` / `0.8.1` /
-`0.11.0` / `^0.12.0`). Coordinated fleet bump is owed; do not bump here.
+Pins `@immediately-run/sdk` at **`0.72.0`** (bumped from `0.57.1` in R3-781:
+hard rule 8 now teaches `openLocalStore()`, first shipped 0.64.1, so the old
+pin made the canonical guidance unactionable). Fleet spread (re-verified
+2026-09-26): `new-project-template` `0.72.0` / `grove` `^0.72.0` / `reckoner`
+`^0.72.0` / `kanban-board` `0.68.0` — every pin ≥ 0.64.1.
 
 ## CLAUDE.md / scaffold conformance (verified)
 

@@ -29,7 +29,7 @@ local `vite dev` — the most common silent failure.
    iframe. `document`, `window`, and `fetch` are available. **Web storage is
    not**: `localStorage`, `sessionStorage`, `indexedDB` and the Cache API are
    all unavailable — apps run at an opaque origin (a sandboxed iframe without
-   `allow-same-origin`; `BROWSER_CAPABILITIES_SPEC` §2 in the docs repo), where
+   `allow-same-origin`; `BROWSER_CAPABILITIES_SPEC` §1 in the docs repo), where
    even *reading* `localStorage` throws `SecurityError`, so a
    `typeof localStorage === 'undefined'` guard does NOT work (the throw is on
    access, not on the value). State goes to the mounts instead:
@@ -42,6 +42,7 @@ local `vite dev` — the most common silent failure.
      when signed out, so the app degrades to in-memory state rather than
      crashing (platform security model rule 9). Treat persistence as optional
      and keep the app fully usable without it.
+
    Worked example: `src/hooks/useTheme.ts` — the in-memory fallback for
    signed-out use; moving its persistence onto `openLocalStore()` is per-app
    work.
@@ -299,10 +300,15 @@ one line each so they get read.
 
 **What doesn't**
 
-- **Blob downloads are blocked** in the app frame (no `allow-downloads` on the
-  iframe) — an "export" button must copy to the clipboard / a `<textarea>`
-  instead of creating an `<a download>` URL.
-- `localStorage` — see hard rule 8 (throws on *access* at the opaque origin).
+- **Blob *navigation* does nothing** for a type the browser would display:
+  `location.assign(blobUrl)` / `window.open(blobUrl)` silently does nothing,
+  because the document that navigation creates gets a *fresh* opaque origin and
+  can no longer resolve the blob. **Downloading works** — a clicked
+  `<a download href="blob:...">` saves the file (the frame carries
+  `allow-downloads` in every stance; measured R3-417). So build exports on
+  `<a download>`, never on "open it in a tab".
+- `localStorage` — see hard rule 8 (throws on *access* at the opaque origin;
+  state goes to `openLocalStore()` / `openSettings()` instead).
 
 **Host vs `vite dev` differences**
 
