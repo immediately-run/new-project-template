@@ -26,14 +26,25 @@ local `vite dev` — the most common silent failure.
 7. **Import local assets** (`import logo from './assets/logo.png'`); don't
    reference server paths that won't exist in the sandbox.
 8. **No Node / build-time-only APIs** in the rendered tree — it runs in a browser
-   iframe. `document`, `window`, and `fetch` are available. **`localStorage` is
-   not**: apps run at an opaque origin (a sandboxed iframe without
-   `allow-same-origin`), where even *reading* the property throws
-   `SecurityError` — so wrap every access in `try`/`catch` (a
-   `typeof localStorage === 'undefined'` guard does NOT work, because the throw
-   is on access, not on the value) and never touch it at module scope. Treat
-   persistence as optional and keep the app fully usable without it. Worked
-   example: `src/hooks/useTheme.ts`.
+   iframe. `document`, `window`, and `fetch` are available. **Web storage is
+   not**: `localStorage`, `sessionStorage`, `indexedDB` and the Cache API are
+   all unavailable — apps run at an opaque origin (a sandboxed iframe without
+   `allow-same-origin`; `BROWSER_CAPABILITIES_SPEC` §2 in the docs repo), where
+   even *reading* `localStorage` throws `SecurityError`, so a
+   `typeof localStorage === 'undefined'` guard does NOT work (the throw is on
+   access, not on the value). State goes to the mounts instead:
+   - **Device-local, rebuildable state** (caches, drafts, scroll positions,
+     checkpoints): the mount from `await openLocalStore()` in
+     `@immediately-run/sdk` — per device, never synced, evictable by the
+     browser under storage pressure.
+   - **Synced state**: `openSettings()`.
+   - Both need a signed-in user: `openLocalStore()` rejects `auth-required`
+     when signed out, so the app degrades to in-memory state rather than
+     crashing (platform security model rule 9). Treat persistence as optional
+     and keep the app fully usable without it.
+   Worked example: `src/hooks/useTheme.ts` — the in-memory fallback for
+   signed-out use; moving its persistence onto `openLocalStore()` is per-app
+   work.
    **Downloading a blob works; *navigating* to one does not.** A clicked
    `<a download href="blob:...">` saves the file — the frame carries
    `allow-downloads` in every stance, and the opaque origin does not stop it.
