@@ -138,7 +138,10 @@ function selfTest() {
   const { block, core } = keptZipRefsBlock();
   check('the workflow carries the fenced KEPT-ZIP-REFS block (the subject exists)', block !== null);
   check('the block reads the pins via gh (not a hand-copied variant of the scan)', /execFileSync\('gh'/.test(core));
-  check('the block discriminates its catch (only HTTP 404/403 continue — fail-closed otherwise)', /HTTP 40\[34\]/.test(core));
+  check(
+    'the block discriminates its catch (only 404 and a plain permission-403 continue — rate limits and everything else rethrow, fail-closed)',
+    /HTTP 404/.test(core) && /HTTP 403/.test(core) && !/HTTP 40\[34\]/.test(core) && /rate limit/i.test(core),
+  );
   if (!block) {
     console.log(`\n${ok}/${attempted} self-test cases.`);
     process.exit(1);
@@ -202,36 +205,45 @@ function selfTest() {
   rmSync(archivedDir, { recursive: true, force: true });
 
   // Fault injections. With no consumer pins the kept set is empty — the pass
-  // above is the scan doing the work, not a pass-through. And a transient
-  // failure (a 5xx, not a 404) FAILS the run fail-closed: the pin is never
-  // silently dropped.
+  // above is the scan doing the work, not a pass-through. A transient 5xx and a
+  // 403-BORNE rate limit both FAIL the run fail-closed: GitHub answers rate
+  // limits as 403s, so the discrimination is what keeps them from the benign
+  // permission-403 skip.
   const outEmpty = runKeptZipRefs({ core, owner: OWNER, repo: REPO, siblings: {} });
   check('fault injection: with no consumer pins, the kept set is empty (refs= only)', outEmpty === 'refs=');
 
-  const failDir = mkdtempSync(join(tmpdir(), 'kept-zip-5xx-'));
-  writeFileSync(
-    join(failDir, 'gh'),
-    `#!/usr/bin/env node
+  let transientFailures = 0;
+  for (const [label, stderr] of [
+    ['a transient 5xx on a consumer read', '"gh": Server Error (HTTP 500)'],
+    ['a 403-borne rate limit on a consumer read', '"gh": HTTP 403: You have exceeded a secondary rate limit'],
+  ]) {
+    const failDir = mkdtempSync(join(tmpdir(), 'kept-zip-fault-'));
+    writeFileSync(
+      join(failDir, 'gh'),
+      `#!/usr/bin/env node
 const args = process.argv.slice(2);
 const url = args.find((a) => a.startsWith('/'));
 if (url.startsWith('/orgs/')) { process.stdout.write('home\\n'); process.exit(0); }
-process.stderr.write('"gh": Server Error (HTTP 500)'); process.exit(1);
+process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);
 `,
-    { mode: 0o755 },
-  );
-  let rethrown = false;
-  try {
-    execFileSync('node', ['-'], {
-      input: core,
-      encoding: 'utf8',
-      env: { ...process.env, PATH: `${failDir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: '{}' },
-      maxBuffer: 1 << 24,
-    });
-  } catch {
-    rethrown = true; // the scan rethrows the 5xx — the run fails fail-closed
+      { mode: 0o755 },
+    );
+    let rethrown = false;
+    try {
+      execFileSync('node', ['-'], {
+        input: core,
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${failDir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: '{}' },
+        maxBuffer: 1 << 24,
+      });
+    } catch {
+      rethrown = true; // the scan rethrows — the run fails fail-closed
+    }
+    check(`fault injection: ${label} FAILS the run (never a silent eviction)`, rethrown);
+    if (rethrown) transientFailures++;
+    rmSync(failDir, { recursive: true, force: true });
   }
-  check('fault injection: a transient 5xx on a consumer read FAILS the run (never a silent eviction)', rethrown);
-  rmSync(failDir, { recursive: true, force: true });
+  check('both transient-failure shapes rethrow (the 403 discrimination does not swallow rate limits)', transientFailures === 2);
 
   if (frozenDir) rmSync(frozenDir, { recursive: true, force: true });
   console.log(`\n${ok}/${attempted} self-test cases.`);
