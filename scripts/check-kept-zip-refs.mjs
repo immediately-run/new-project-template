@@ -80,7 +80,7 @@ const extra = JSON.parse(process.env.FAKE_GH_EXTRA ?? '[]');
 // consumer, so the scan's own-repo skip and its no-archived-carve-out are both
 // driven for real — not just via a 404.
 const listings = [...extra, ...Object.keys(siblings), 'the-library-itself', process.env.KEPT_REPO, 'an-archived-consumer'];
-if (url.startsWith('/orgs/')) {
+if (url.startsWith('/users/') || url.startsWith('/orgs/')) {
   process.stdout.write(listings.join('\\n'));
 } else if (url.includes('/contents/package.json')) {
   const name = url.split('/repos/')[1].split('/contents')[0].split('/')[1];
@@ -244,6 +244,43 @@ process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);
     rmSync(failDir, { recursive: true, force: true });
   }
   check('both transient-failure shapes rethrow (the 403 discrimination does not swallow rate limits)', transientFailures === 2);
+
+  // The plain permission-403 benign case, driven for real: ONE consumer read
+  // answers a plain permission 403 ("Resource not accessible by integration" —
+  // no rate-limit wording); the run CONTINUES and keeps the other pins.
+  {
+    const dir = mkdtempSync(join(tmpdir(), 'kept-zip-403-'));
+    try {
+      writeFileSync(
+        join(dir, 'gh'),
+        `#!/usr/bin/env node
+const { existsSync, readFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+const url = args.find((a) => a.startsWith('/'));
+const siblings = JSON.parse(process.env.FAKE_GH_SIBLINGS ?? '{}');
+if (url.startsWith('/users/')) { process.stdout.write([...Object.keys(siblings), 'home'].join('\\n')); process.exit(0); }
+const name = url.split('/repos/')[1].split('/contents')[0].split('/')[1];
+if (name === 'home') { process.stderr.write('"gh": Resource not accessible by integration (HTTP 403)'); process.exit(1); }
+const path = siblings[name];
+if (!path || !existsSync(path)) { process.stderr.write('"gh": Not Found (HTTP 404)'); process.exit(1); }
+process.stdout.write(readFileSync(path, 'utf8'));
+`,
+        { mode: 0o755 },
+      );
+      const out403 = execFileSync('node', ['-'], {
+        input: core,
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: JSON.stringify(map) },
+        maxBuffer: 1 << 24,
+      }).trim();
+      check(
+        'fault injection: a plain permission-403 on ONE consumer read CONTINUES, keeping the other pins',
+        expectedPins.length > 0 && expectedPins.every((pin) => out403.includes(pin)),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   if (frozenDir) rmSync(frozenDir, { recursive: true, force: true });
   console.log(`\n${ok}/${attempted} self-test cases.`);
