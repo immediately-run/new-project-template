@@ -30,6 +30,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW = join(ROOT, '.github', 'workflows', 'cache.yml');
 const FENCE_BEGIN = '# KEPT-ZIP-REFS-BEGIN';
+// The gh-api call's output bound, one home beside the scan's own (cache.yml must
+// spell it inline — the block is replicated by value — but every site here and
+// there reasons from the same 16 MB, comfortably above any org's package.json).
+const MAX_BUFFER = 1 << 24;
 const FENCE_END = '# KEPT-ZIP-REFS-END';
 
 /** The fenced inline block from the workflow — the REAL producer, not a copy.
@@ -49,11 +53,14 @@ export function keptZipRefsBlock(workflowText = readFileSync(WORKFLOW, 'utf8')) 
  *  workflow's spelling. */
 export function pinsOf(pkgText, owner, repo) {
   const pkg = JSON.parse(pkgText);
-  const prefix = `github:${owner}/${repo}#`;
+  // The SAME derivation shape the scan uses, including the case-insensitive
+  // owner/repo prefix (GitHub resolves them case-insensitively) — the sha stays
+  // verbatim, uppercase hex included.
+  const prefix = `github:${owner}/${repo}#`.toLowerCase();
   const out = [];
   for (const group of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
     for (const spec of Object.values(pkg[group] ?? {})) {
-      if (typeof spec === 'string' && spec.startsWith(prefix) && /^[0-9a-f]{40}$/.test(spec.slice(prefix.length))) {
+      if (typeof spec === 'string' && spec.toLowerCase().startsWith(prefix) && /^[0-9a-fA-F]{40}$/.test(spec.slice(prefix.length))) {
         out.push(spec.slice(prefix.length));
       }
     }
@@ -104,7 +111,7 @@ if (url.startsWith('/users/') || url.startsWith('/orgs/')) {
         FAKE_GH_SIBLINGS: JSON.stringify(siblings),
         FAKE_GH_EXTRA: JSON.stringify(extraListings),
       },
-      maxBuffer: 1 << 24,
+      maxBuffer: MAX_BUFFER,
     }).trim();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -170,7 +177,7 @@ function selfTest() {
     `the real consumer pins are kept (${expectedPins.map((p) => p.slice(0, 7)).join(', ')})`,
     expectedPins.length > 0 && expectedPins.every((p) => out.includes(p)),
   );
-  check('the output is the refs= line the workflow output consumes', /^refs=([0-9a-f]{40}( [0-9a-f]{40})*)?$/.test(out));
+  check('the output is the refs= line the workflow output consumes (hex verbatim, either case)', /^refs=([0-9a-fA-F]{40}( [0-9a-fA-F]{40})*)?$/.test(out));
 
   // The self-pin skip branch, driven for real: the listing includes the library
   // itself BY EXACT NAME, and its package.json (a self-pin, reachable through the
@@ -204,6 +211,20 @@ function selfTest() {
   check('an archived consumer’s pin is kept (no archived carve-out)', outArchived.includes(archivedPin) && expectedPins.every((p) => outArchived.includes(p)));
   rmSync(archivedDir, { recursive: true, force: true });
 
+  // A pin spelled with NON-CANONICAL CASING — the owner/repo half (GitHub resolves
+  // it case-insensitively) and the sha half (git resolves uppercase hex) — is kept,
+  // its sha VERBATIM (the client probes the pin verbatim, so a lowercased publish
+  // would 404).
+  {
+    const casedPin = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
+    const casedDir = mkdtempSync(join(tmpdir(), 'kept-zip-cased-'));
+    const casedPkg = join(casedDir, 'package.json');
+    writeFileSync(casedPkg, JSON.stringify({ name: 'cased-consumer', dependencies: { '@immediately-run/omnibox': `github:immediately-run/Omnibox#${casedPin}` } }, null, 2));
+    const outCased = runKeptZipRefs({ core, owner: OWNER, repo: REPO, siblings: { ...map, 'cased-consumer': casedPkg } });
+    check('a non-canonically-cased pin (owner/repo and sha) is kept, its sha VERBATIM', outCased.includes(casedPin) && expectedPins.every((pin) => outCased.includes(pin)));
+    rmSync(casedDir, { recursive: true, force: true });
+  }
+
   // Fault injections. With no consumer pins the kept set is empty — the pass
   // above is the scan doing the work, not a pass-through. A transient 5xx and a
   // 403-BORNE rate limit both FAIL the run fail-closed: GitHub answers rate
@@ -223,7 +244,7 @@ function selfTest() {
       `#!/usr/bin/env node
 const args = process.argv.slice(2);
 const url = args.find((a) => a.startsWith('/'));
-if (url.startsWith('/orgs/')) { process.stdout.write('home\\n'); process.exit(0); }
+if (url.startsWith('/users/')) { process.stdout.write('home\\n'); process.exit(0); }
 process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);
 `,
       { mode: 0o755 },
@@ -234,7 +255,7 @@ process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);
         input: core,
         encoding: 'utf8',
         env: { ...process.env, PATH: `${failDir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: '{}' },
-        maxBuffer: 1 << 24,
+        maxBuffer: MAX_BUFFER,
       });
     } catch {
       rethrown = true; // the scan rethrows — the run fails fail-closed
@@ -271,7 +292,7 @@ process.stdout.write(readFileSync(path, 'utf8'));
         input: core,
         encoding: 'utf8',
         env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: JSON.stringify(map) },
-        maxBuffer: 1 << 24,
+        maxBuffer: MAX_BUFFER,
       }).trim();
       check(
         'fault injection: a plain permission-403 on ONE consumer read CONTINUES, keeping the other pins',
