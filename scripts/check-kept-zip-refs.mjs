@@ -1,0 +1,320 @@
+#!/usr/bin/env node
+// check-kept-zip-refs.mjs (R3-897) — the keep-set test for cache.yml's consumer-pin
+// scan.
+//
+// WHY THIS EXISTS. cache.yml's "Derive the consumer-pinned refs to keep" step
+// re-builds every sha zip a consumer pins, so a Pages redeploy no longer evicts
+// a pinned commit (omnibox's 2026-09-29 redeploy dropped c61f996…, the pin both
+// landing-page and home carried, and every cold front-door boot fell to ~10
+// anonymous api.github.com calls against a 60/hour limit). The scan lives INLINE
+// in the workflow — cache.yml is copied BY VALUE to every repo and replicated by
+// the drift check, so a script beside it would drift while the workflow's copy
+// stayed — which leaves the logic with no ordinary unit-test seam.
+//
+// THE SEAM THIS BUILDS. The inline block is fenced (# KEPT-ZIP-REFS-BEGIN/END)
+// and this check EXTRACTS it from the workflow file itself and runs it against
+// a FAKE gh — the subject is the code CI runs, byte for byte, never a copy
+// (ways_of_working §4: a hand-copied fixture encodes the same false assumption
+// as the code under test). The inputs are the REAL producers: the sibling
+// checkouts' package.json files (landing-page, home) where they exist, so the
+// case asserts the LIVE pins; with no siblings (CI checks this repo out alone)
+// the same cases run over a frozen one-pin listing.
+//
+// Run: node scripts/check-kept-zip-refs.mjs --self-test
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WORKFLOW = join(ROOT, '.github', 'workflows', 'cache.yml');
+const FENCE_BEGIN = '# KEPT-ZIP-REFS-BEGIN';
+// The gh-api call's output bound, one home beside the scan's own (cache.yml must
+// spell it inline — the block is replicated by value — but every site here and
+// there reasons from the same 16 MB, comfortably above any org's package.json).
+const MAX_BUFFER = 1 << 24;
+const FENCE_END = '# KEPT-ZIP-REFS-END';
+
+/** The fenced inline block from the workflow — the REAL producer, not a copy.
+ *  `core` is the executable node heredoc between the fences. */
+export function keptZipRefsBlock(workflowText = readFileSync(WORKFLOW, 'utf8')) {
+  const begin = workflowText.indexOf(FENCE_BEGIN);
+  const end = workflowText.indexOf(FENCE_END);
+  if (begin === -1 || end === -1 || end < begin) return null;
+  const block = workflowText.slice(begin, end + FENCE_END.length);
+  const core = block.replace(/^[\s\S]*node <<'KEPT_ZIP_REFS'[^\n]*\n/, '').replace(/\n[ \t]*KEPT_ZIP_REFS[\s\S]*$/, '');
+  return { block, core };
+}
+
+/** The pins of `repo` in a parsed package.json's dependency groups — the SAME
+ *  derivation shape the scan uses (walk parsed dependency values, never a regex
+ *  over raw text), parameterised by owner/repo so it cannot hand-copy the
+ *  workflow's spelling. */
+export function pinsOf(pkgText, owner, repo) {
+  const pkg = JSON.parse(pkgText);
+  // The SAME derivation shape the scan uses, including the case-insensitive
+  // owner/repo prefix (GitHub resolves them case-insensitively) — the sha stays
+  // verbatim, uppercase hex included.
+  const prefix = `github:${owner}/${repo}#`.toLowerCase();
+  const out = [];
+  for (const group of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    for (const spec of Object.values(pkg[group] ?? {})) {
+      if (typeof spec === 'string' && spec.toLowerCase().startsWith(prefix) && /^[0-9a-fA-F]{40}$/.test(spec.slice(prefix.length))) {
+        out.push(spec.slice(prefix.length));
+      }
+    }
+  }
+  return out;
+}
+
+/** Run the extracted core with a FAKE gh first on PATH. The fake serves the
+ *  org listing (names one per line, `--paginate`-shaped: the sibling names, the
+ *  library itself, a self-pinning twin, and an archived consumer) and each
+ *  package.json from the sibling map; a repo with no entry answers 404-style. */
+export function runKeptZipRefs({ core, owner, repo, siblings, extraListings = [] }) {
+  const dir = mkdtempSync(join(tmpdir(), 'kept-zip-refs-'));
+  try {
+    writeFileSync(
+      join(dir, 'gh'),
+      `#!/usr/bin/env node
+const { existsSync, readFileSync } = require('node:fs');
+const args = process.argv.slice(2); // ['api', url, ...flags]
+const url = args.find((a) => a.startsWith('/'));
+const siblings = JSON.parse(process.env.FAKE_GH_SIBLINGS ?? '{}');
+const extra = JSON.parse(process.env.FAKE_GH_EXTRA ?? '[]');
+// The listing includes the library ITSELF (by its exact name) and an archived
+// consumer, so the scan's own-repo skip and its no-archived-carve-out are both
+// driven for real — not just via a 404.
+const listings = [...extra, ...Object.keys(siblings), 'the-library-itself', process.env.KEPT_REPO, 'an-archived-consumer'];
+if (url.startsWith('/users/') || url.startsWith('/orgs/')) {
+  process.stdout.write(listings.join('\\n'));
+} else if (url.includes('/contents/package.json')) {
+  const name = url.split('/repos/')[1].split('/contents')[0].split('/')[1];
+  const path = siblings[name];
+  if (!path || !existsSync(path)) { process.stderr.write('"gh": Not Found (HTTP 404)'); process.exit(1); }
+  process.stdout.write(readFileSync(path, 'utf8'));
+} else {
+  process.exit(2);
+}
+`,
+      { mode: 0o755 },
+    );
+    return execFileSync('node', ['-'], {
+      input: core,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        KEPT_OWNER: owner,
+        KEPT_REPO: repo,
+        FAKE_GH_SIBLINGS: JSON.stringify(siblings),
+        FAKE_GH_EXTRA: JSON.stringify(extraListings),
+      },
+      maxBuffer: MAX_BUFFER,
+    }).trim();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The live sibling pins where the checkouts exist; null in CI (no siblings). */
+function liveSiblingPins() {
+  const siblings = {};
+  for (const name of ['landing-page', 'home']) {
+    const path = join(ROOT, '..', name, 'package.json');
+    if (existsSync(path)) siblings[name] = path;
+  }
+  return Object.keys(siblings).length > 0 ? siblings : null;
+}
+
+/** A frozen sibling map for CI: the eviction case's pin, verbatim from history. */
+const FROZEN_PIN = 'c61f996c06e675e9770db608abc763986343872c';
+
+function selfTest() {
+  let ok = 0;
+  let attempted = 0;
+  const check = (name, cond) => {
+    attempted++;
+    console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`);
+    if (cond) ok++;
+  };
+
+  const OWNER = 'immediately-run';
+  const REPO = 'omnibox';
+  const { block, core } = keptZipRefsBlock();
+  check('the workflow carries the fenced KEPT-ZIP-REFS block (the subject exists)', block !== null);
+  check('the block reads the pins via gh (not a hand-copied variant of the scan)', /execFileSync\('gh'/.test(core));
+  check(
+    'the block discriminates its catch (only 404 and a plain permission-403 continue — rate limits and everything else rethrow, fail-closed)',
+    /HTTP 404/.test(core) && /HTTP 403/.test(core) && !/HTTP 40\[34\]/.test(core) && /rate limit/i.test(core),
+  );
+  if (!block) {
+    console.log(`\n${ok}/${attempted} self-test cases.`);
+    process.exit(1);
+  }
+
+  const siblings = liveSiblingPins();
+  let frozenDir;
+  let map;
+  let expectedPins;
+  if (siblings) {
+    map = siblings;
+    expectedPins = [];
+    for (const path of Object.values(siblings)) {
+      expectedPins.push(...pinsOf(readFileSync(path, 'utf8'), OWNER, REPO));
+    }
+  } else {
+    frozenDir = mkdtempSync(join(tmpdir(), 'kept-zip-frozen-'));
+    const path = join(frozenDir, 'package.json');
+    writeFileSync(path, JSON.stringify({ name: 'frozen-consumer', dependencies: { '@immediately-run/omnibox': `github:${OWNER}/${REPO}#${FROZEN_PIN}` } }, null, 2));
+    map = { 'frozen-consumer': path };
+    expectedPins = [FROZEN_PIN];
+  }
+  const out = runKeptZipRefs({ core, owner: OWNER, repo: REPO, siblings: map });
+
+  check(
+    `the real consumer pins are kept (${expectedPins.map((p) => p.slice(0, 7)).join(', ')})`,
+    expectedPins.length > 0 && expectedPins.every((p) => out.includes(p)),
+  );
+  check('the output is the refs= line the workflow output consumes (hex verbatim, either case)', /^refs=([0-9a-fA-F]{40}( [0-9a-fA-F]{40})*)?$/.test(out));
+
+  // The self-pin skip branch, driven for real: the listing includes the library
+  // itself BY EXACT NAME, and its package.json (a self-pin, reachable through the
+  // sibling map) would be kept if the skip were removed — so the sha's absence is
+  // the skip doing the work, not a 404.
+  const selfPin = 'a'.repeat(40);
+  const twinDir = mkdtempSync(join(tmpdir(), 'kept-zip-self-'));
+  const twinPkg = join(twinDir, 'package.json');
+  writeFileSync(twinPkg, JSON.stringify({ name: REPO, dependencies: { [`@immediately-run/${REPO}`]: `github:${OWNER}/${REPO}#${selfPin}` } }, null, 2));
+  const outSelf = runKeptZipRefs({
+    core,
+    owner: OWNER,
+    repo: REPO,
+    siblings: { ...map, [REPO]: twinPkg },
+  });
+  check('the library itself is never kept (its exact-named listing entry, with a reachable self-pin, is skipped)', !outSelf.includes(selfPin) && expectedPins.every((p) => outSelf.includes(p)));
+  rmSync(twinDir, { recursive: true, force: true });
+
+  // An ARCHIVED consumer's pin is kept too (the scan has no archived carve-out:
+  // an archived repo's Pages and pin stay live).
+  const archivedPin = 'b'.repeat(40);
+  const archivedDir = mkdtempSync(join(tmpdir(), 'kept-zip-arch-'));
+  const archivedPkg = join(archivedDir, 'package.json');
+  writeFileSync(archivedPkg, JSON.stringify({ name: 'an-archived-consumer', dependencies: { [`@immediately-run/${REPO}`]: `github:${OWNER}/${REPO}#${archivedPin}` } }, null, 2));
+  const outArchived = runKeptZipRefs({
+    core,
+    owner: OWNER,
+    repo: REPO,
+    siblings: { ...map, 'an-archived-consumer': archivedPkg },
+  });
+  check('an archived consumer’s pin is kept (no archived carve-out)', outArchived.includes(archivedPin) && expectedPins.every((p) => outArchived.includes(p)));
+  rmSync(archivedDir, { recursive: true, force: true });
+
+  // A pin spelled with NON-CANONICAL CASING — the owner/repo half (GitHub resolves
+  // it case-insensitively) and the sha half (git resolves uppercase hex) — is kept,
+  // its sha VERBATIM (the client probes the pin verbatim, so a lowercased publish
+  // would 404).
+  {
+    const casedPin = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
+    const casedDir = mkdtempSync(join(tmpdir(), 'kept-zip-cased-'));
+    const casedPkg = join(casedDir, 'package.json');
+    writeFileSync(casedPkg, JSON.stringify({ name: 'cased-consumer', dependencies: { '@immediately-run/omnibox': `github:immediately-run/Omnibox#${casedPin}` } }, null, 2));
+    const outCased = runKeptZipRefs({ core, owner: OWNER, repo: REPO, siblings: { ...map, 'cased-consumer': casedPkg } });
+    check('a non-canonically-cased pin (owner/repo and sha) is kept, its sha VERBATIM', outCased.includes(casedPin) && expectedPins.every((pin) => outCased.includes(pin)));
+    rmSync(casedDir, { recursive: true, force: true });
+  }
+
+  // Fault injections. With no consumer pins the kept set is empty — the pass
+  // above is the scan doing the work, not a pass-through. A transient 5xx and a
+  // 403-BORNE rate limit both FAIL the run fail-closed: GitHub answers rate
+  // limits as 403s, so the discrimination is what keeps them from the benign
+  // permission-403 skip.
+  const outEmpty = runKeptZipRefs({ core, owner: OWNER, repo: REPO, siblings: {} });
+  check('fault injection: with no consumer pins, the kept set is empty (refs= only)', outEmpty === 'refs=');
+
+  let transientFailures = 0;
+  for (const [label, stderr] of [
+    ['a transient 5xx on a consumer read', '"gh": Server Error (HTTP 500)'],
+    ['a 403-borne rate limit on a consumer read', '"gh": HTTP 403: You have exceeded a secondary rate limit'],
+  ]) {
+    const failDir = mkdtempSync(join(tmpdir(), 'kept-zip-fault-'));
+    writeFileSync(
+      join(failDir, 'gh'),
+      `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const url = args.find((a) => a.startsWith('/'));
+if (url.startsWith('/users/')) { process.stdout.write('home\\n'); process.exit(0); }
+process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);
+`,
+      { mode: 0o755 },
+    );
+    let rethrown = false;
+    try {
+      execFileSync('node', ['-'], {
+        input: core,
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${failDir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: '{}' },
+        maxBuffer: MAX_BUFFER,
+      });
+    } catch {
+      rethrown = true; // the scan rethrows — the run fails fail-closed
+    }
+    check(`fault injection: ${label} FAILS the run (never a silent eviction)`, rethrown);
+    if (rethrown) transientFailures++;
+    rmSync(failDir, { recursive: true, force: true });
+  }
+  check('both transient-failure shapes rethrow (the 403 discrimination does not swallow rate limits)', transientFailures === 2);
+
+  // The plain permission-403 benign case, driven for real: ONE consumer read
+  // answers a plain permission 403 ("Resource not accessible by integration" —
+  // no rate-limit wording); the run CONTINUES and keeps the other pins.
+  {
+    const dir = mkdtempSync(join(tmpdir(), 'kept-zip-403-'));
+    try {
+      writeFileSync(
+        join(dir, 'gh'),
+        `#!/usr/bin/env node
+const { existsSync, readFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+const url = args.find((a) => a.startsWith('/'));
+const siblings = JSON.parse(process.env.FAKE_GH_SIBLINGS ?? '{}');
+if (url.startsWith('/users/')) { process.stdout.write([...Object.keys(siblings), 'home'].join('\\n')); process.exit(0); }
+const name = url.split('/repos/')[1].split('/contents')[0].split('/')[1];
+if (name === 'home') { process.stderr.write('"gh": Resource not accessible by integration (HTTP 403)'); process.exit(1); }
+const path = siblings[name];
+if (!path || !existsSync(path)) { process.stderr.write('"gh": Not Found (HTTP 404)'); process.exit(1); }
+process.stdout.write(readFileSync(path, 'utf8'));
+`,
+        { mode: 0o755 },
+      );
+      const out403 = execFileSync('node', ['-'], {
+        input: core,
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, KEPT_OWNER: OWNER, KEPT_REPO: REPO, FAKE_GH_SIBLINGS: JSON.stringify(map) },
+        maxBuffer: MAX_BUFFER,
+      }).trim();
+      check(
+        'fault injection: a plain permission-403 on ONE consumer read CONTINUES, keeping the other pins',
+        expectedPins.length > 0 && expectedPins.every((pin) => out403.includes(pin)),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  if (frozenDir) rmSync(frozenDir, { recursive: true, force: true });
+  console.log(`\n${ok}/${attempted} self-test cases.`);
+  if (ok !== attempted) process.exit(1);
+}
+
+// Run only when executed as the entry script (importing the pure parts must not
+// run the self-test — the org's convention).
+import { pathToFileURL } from 'node:url';
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes('--self-test')) selfTest();
+  else {
+    console.error('check-kept-zip-refs: run with --self-test (the check is the test; there is no live mode).');
+    process.exit(1);
+  }
+}

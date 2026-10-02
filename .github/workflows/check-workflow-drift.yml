@@ -25,6 +25,7 @@ on:
     paths:
       - '.github/workflows/cache.yml'
       - 'scripts/check-workflow-drift.mjs'
+      - 'scripts/check-kept-zip-refs.mjs'
       - '.github/workflows/check-workflow-drift.yml'
   workflow_dispatch:
 
@@ -59,3 +60,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-workflow-drift.mjs
+
+      # R3-897 — the keep-set test: drives cache.yml's consumer-pin scan (the
+      # fenced inline block, extracted from the workflow itself) against a fake
+      # gh, over the frozen eviction-case listing (CI has no sibling checkouts).
+      - name: Self-test the kept-zip-refs keep-set (R3-897)
+        run: node scripts/check-kept-zip-refs.mjs --self-test
