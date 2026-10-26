@@ -60,15 +60,19 @@
     radial-gradient(50% 40% at 12% 8%, rgba(244,154,212,.07), transparent 60%);
 
   /* — Host-chrome insets —
-     On immediately.run the platform pill floats over your app's TOP-RIGHT
-     corner, so anything you anchor there (a theme toggle, a menu button) can
-     end up underneath it. The host reports the covered box; feed it in from
+     On immediately.run the platform pill floats over one corner of your app
+     (the BOTTOM-RIGHT since 2026-10-26; the top-right before), so anything you
+     anchor there (a theme toggle, a menu button) can end up underneath it. The
+     host reports the covered box per edge; feed all four in from
      `useFormFactor().insets` and the rules that consume these vars below do the
-     rest. See CLAUDE.md → "Keep your corner controls clear of the platform
-     pill". Zero by default: off-host, and on any host that reports nothing,
-     your layout is untouched. */
+     rest — a control pads by whichever edges are nonzero, so the corner can
+     move without your CSS changing. See CLAUDE.md → "Keep your corner controls
+     clear of the platform pill". Zero by default: off-host, and on any host
+     that reports nothing, your layout is untouched. */
   --chrome-inset-top: 0px;
   --chrome-inset-right: 0px;
+  --chrome-inset-bottom: 0px;
+  --chrome-inset-left: 0px;
 }
 
 /* ---------------------------------------------------------------- LIGHT */

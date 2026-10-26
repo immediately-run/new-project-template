@@ -122,23 +122,27 @@ per-module subpath (`@immediately-run/sdk/hooks`).
 
 ## Keep your corner controls clear of the platform pill
 
-On immediately.run the **platform pill floats over your app's top-right corner**
-(it is how the user reaches the platform menu). Anything you anchor there — a
-theme toggle, a menu button, a close affordance — can end up underneath it, and
-your app cannot measure the pill: it is host chrome, outside your iframe.
+On immediately.run the **platform pill floats over one corner of your app** — the
+**bottom-right** since 2026-10-26 (it sat top-right before; `PRESENT_MODE_CHROME_SPEC`
+§2 records the move). It is how the user reaches the platform menu. Anything you
+anchor in that corner — a theme toggle, a menu button, a close affordance — can end
+up underneath it, and your app cannot measure the pill: it is host chrome, outside
+your iframe.
 
 The host reports the covered box on the form-factor channel, as
 `insets: { top, right, bottom, left }` in CSS px.
 
 Read it as a **rectangle per edge**: each number is the distance inward from that
 edge of your viewport where platform chrome may sit, and the chrome is in the
-**intersection** of the nonzero bands. Today that means a nonzero `top` and
-`right` with `bottom`/`left` at 0 — i.e. only the **top-right corner rectangle**
+**intersection** of the nonzero bands. Today that means a nonzero `bottom` and
+`right` with `top`/`left` at 0 — i.e. only the **bottom-right corner rectangle**
 is covered. All zeros means nothing is over you (`vite dev`, edit mode, or a host
 that does not report it — the field is additive, so it is always safe to read).
+Do not hard-code the corner: pad by all four edges and the pill can move again
+without your app changing.
 
 **Pad the control, not the layout.** This template ships the wiring: `index.css`
-declares `--chrome-inset-top` / `--chrome-inset-right` (0 by default) and
+declares `--chrome-inset-top` / `-right` / `-bottom` / `-left` (0 by default) and
 `nav.top .cta` pads itself by them in `App.css`. Feed them from the host, once,
 near your root:
 
@@ -146,9 +150,10 @@ near your root:
 const { insets } = useFormFactor();
 useEffect(() => {
   const root = document.documentElement;
-  root.style.setProperty('--chrome-inset-top', `${insets.top}px`);
-  root.style.setProperty('--chrome-inset-right', `${insets.right}px`);
-}, [insets.top, insets.right]);
+  for (const edge of ['top', 'right', 'bottom', 'left'] as const) {
+    root.style.setProperty(`--chrome-inset-${edge}`, `${insets[edge]}px`);
+  }
+}, [insets.top, insets.right, insets.bottom, insets.left]);
 ```
 
 Do **not** reserve a permanent gutter or push your whole page down: apps with
