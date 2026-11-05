@@ -62,8 +62,9 @@ local `vite dev` — the most common silent failure.
 
 ## Loading & caching on immediately.run
 
-`.github/workflows/cache.yml` publishes a pre-cached zip of this repo to its own
-GitHub Pages on each push to `main`, so immediately.run loads fast and within
+`.github/workflows/cache.yml` (a stub calling the template's shared
+`zip-cache.yml@main` — don't edit it by hand) publishes a pre-cached zip of this
+repo to its own GitHub Pages on each push to `main`, so immediately.run loads fast and within
 anonymous rate limits. To enable it on a repo in your own account/org, turn Pages
 on once — **Settings → Pages → Source: GitHub Actions** — then push to `main`; no
 tokens or secrets. (immediately-run org repos self-provision Pages on the first

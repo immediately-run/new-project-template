@@ -1,0 +1,6 @@
+# The shared zip-cache job runs in every app repo that calls it @main
+# (ZIP_CACHE_AUTOMATION_SPEC §4 *Distribution*), so a change to the workflows or
+# the scripts that render and check its stub needs the owner's review. The
+# ruleset on main (R3-1335) makes this a required approval.
+/.github/ @neumark
+/scripts/ @neumark
