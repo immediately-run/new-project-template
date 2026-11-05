@@ -1,8 +1,9 @@
 # THE SHARED JOB (ZIP_CACHE_AUTOMATION_SPEC §4 *Distribution*, §8; R3-1332).
 # Every repo's `.github/workflows/cache.yml` is a stub that calls this file at
 # `@main` — rendered by `scripts/zip-cache-stub.mjs`, never hand-edited — so a
-# change merged here reaches every repo on its next run. This repo's `main` is
-# protected (a ruleset, R3-1335) because of that reach.
+# change merged here reaches every repo on its next run. Because of that reach,
+# this repo's `main` is to carry a ruleset (R3-1335) before any repo but this one
+# calls the job; until it is in force, nothing else should call `@main`.
 #
 # Inside a called workflow the `github` context is the CALLER's: `github.repository_owner`,
 # `github.event.repository.name`, `github.ref_name` and `github.sha` name the repo being
@@ -232,8 +233,8 @@ jobs:
         run: |
           # KEPT-ZIP-REFS-BEGIN (R3-897) — new-project-template's
           # scripts/check-kept-zip-refs.mjs extracts and drives this block. Edit the
-          # TEMPLATE's copy (this file is replicated by value; a local edit of a
-          # consumer's copy is drift the nightly check reports), then re-sync.
+          # block HERE: it exists once, in the shared job every repo calls at @main
+          # (R3-1332), so a change reaches every caller on its next run.
           node <<'KEPT_ZIP_REFS' >> "$GITHUB_OUTPUT"
           const { execFileSync } = require('node:child_process');
           const owner = process.env.KEPT_OWNER;
@@ -334,16 +335,18 @@ jobs:
       # A friendly landing page so the Pages root isn't a bare 404. A repo with its
       # own page passes `landing-html: <path>` from its stub; a path that is set
       # but missing fails the run rather than silently publishing the stock page.
+      # Read from the PUSHED commit with `git show`, never from the working tree:
+      # the build loop above leaves the checkout at the last kept (older) ref.
       - name: Write index.html
         env:
           LANDING_HTML: ${{ inputs.landing-html }}
+          PUSHED_SHA: ${{ github.sha }}
         run: |
           if [ -n "$LANDING_HTML" ]; then
-            if [ ! -f "$LANDING_HTML" ]; then
-              echo "::error::landing-html is set to '$LANDING_HTML', which does not exist in this checkout"
+            if ! git show "$PUSHED_SHA:$LANDING_HTML" > _site/index.html; then
+              echo "::error::landing-html is set to '$LANDING_HTML', which does not exist at $PUSHED_SHA"
               exit 1
             fi
-            cp "$LANDING_HTML" _site/index.html
             exit 0
           fi
           cat > _site/index.html <<'HTML'

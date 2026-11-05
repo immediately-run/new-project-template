@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// check-kept-zip-refs.mjs (R3-897) — the keep-set test for cache.yml's consumer-pin
+// check-kept-zip-refs.mjs (R3-897) — the keep-set test for zip-cache.yml's consumer-pin
 // scan.
 //
-// WHY THIS EXISTS. cache.yml's "Derive the consumer-pinned refs to keep" step
+// WHY THIS EXISTS. zip-cache.yml's "Derive the consumer-pinned refs to keep" step
 // re-builds every sha zip a consumer pins, so a Pages redeploy no longer evicts
 // a pinned commit (omnibox's 2026-09-29 redeploy dropped c61f996…, the pin both
 // landing-page and home carried, and every cold front-door boot fell to ~10
 // anonymous api.github.com calls against a 60/hour limit). The scan lives INLINE
-// in the workflow — cache.yml is copied BY VALUE to every repo and replicated by
-// the drift check, so a script beside it would drift while the workflow's copy
-// stayed — which leaves the logic with no ordinary unit-test seam.
+// in the shared job — every repo calls zip-cache.yml at @main (R3-1332), and a
+// called workflow runs in the CALLER's checkout, where a script beside it does
+// not exist — which leaves the logic with no ordinary unit-test seam.
 //
 // THE SEAM THIS BUILDS. The inline block is fenced (# KEPT-ZIP-REFS-BEGIN/END)
 // and this check EXTRACTS it from the workflow file itself and runs it against
@@ -30,9 +30,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW = join(ROOT, '.github', 'workflows', 'zip-cache.yml'); // the shared job (R3-1332)
 const FENCE_BEGIN = '# KEPT-ZIP-REFS-BEGIN';
-// The gh-api call's output bound, one home beside the scan's own (cache.yml must
-// spell it inline — the block is replicated by value — but every site here and
-// there reasons from the same 16 MB, comfortably above any org's package.json).
+// The gh-api call's output bound, one home beside the scan's own (zip-cache.yml
+// must spell it inline — the block runs in the caller's checkout — but every site
+// here and there reasons from the same 16 MB, comfortably above any org's package.json).
 const MAX_BUFFER = 1 << 24;
 const FENCE_END = '# KEPT-ZIP-REFS-END';
 

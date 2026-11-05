@@ -115,12 +115,15 @@ if (isMain && process.argv.includes('--self-test')) {
   const job = readFileSync(JOB, 'utf8');
   ok('the job is a reusable workflow', /^on:\n  workflow_call:/m.test(job));
   ok('the job carries no concurrency group (the stub owns it)', !/^concurrency:/m.test(job));
+  // The build loop leaves the checkout at the last kept ref, so the landing page
+  // must come from the pushed commit, not the working tree (R3-1332 review r1).
+  ok('the landing page is read from the pushed commit', /git show "\$PUSHED_SHA:\$LANDING_HTML"/.test(job) && !/cp "\$LANDING_HTML"/.test(job));
   const fakeFiles = { stub: renderStub(), copy: job, none: null, tagged: renderStub().replace(SHARED_JOB, SHARED_JOB.replace('@main', '@v1')) };
   const judged = judgeRepos(Object.keys(fakeFiles), (r) => fakeFiles[r]);
   ok('a repo with no cache.yml is not counted', judged.checked === 3);
   ok('a by-value copy and a tag reference are drift; the stub is not',
     JSON.stringify(judged.drifted) === JSON.stringify(['copy', 'tagged']));
-  n += 5;
+  n += 6;
   // The pin guard. Its input is the REAL zip-cache.yml, and its npm lookup is
   // stubbed so the three outcomes — served, absent, unreachable — are all
   // exercised. Only the last of these is hard to produce on demand in CI.
