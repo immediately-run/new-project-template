@@ -33,7 +33,12 @@ immediately.run normally reads your sources from the GitHub API, which is slow
 and rate-limited for anonymous visitors. This template ships a GitHub Action
 ([`.github/workflows/cache.yml`](./.github/workflows/cache.yml)) that, on every
 push to `main`, builds a pre-cached zip of your repo and publishes it to your
-repo's **own GitHub Pages**. immediately.run finds it automatically at
+repo's **own GitHub Pages**. The file is a short stub: the job itself lives in
+this template's
+[`.github/workflows/zip-cache.yml`](./.github/workflows/zip-cache.yml), called at
+`@main`, so a fix to it reaches every repo on its next run. Don't edit the stub
+by hand; to serve your own Pages root page, pass `landing-html: <path>` (render
+the stub with `scripts/zip-cache-stub.mjs`). immediately.run finds it automatically at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip` — or, for a
 commit-pinned library dependency, `cached_repositories/<sha>.zip` — and loads from
 there — falling back to the API if it's missing.

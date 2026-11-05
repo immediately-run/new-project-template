@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const WORKFLOW = join(ROOT, '.github', 'workflows', 'cache.yml');
+const WORKFLOW = join(ROOT, '.github', 'workflows', 'zip-cache.yml'); // the shared job (R3-1332)
 const FENCE_BEGIN = '# KEPT-ZIP-REFS-BEGIN';
 // The gh-api call's output bound, one home beside the scan's own (cache.yml must
 // spell it inline — the block is replicated by value — but every site here and

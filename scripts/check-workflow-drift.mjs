@@ -1,30 +1,35 @@
 #!/usr/bin/env node
-// Reports org repos whose `.github/workflows/cache.yml` has drifted from this
-// template's copy.
+// Reports org repos whose `.github/workflows/cache.yml` is not the stub that
+// calls this template's shared job.
 //
-// WHY THIS EXISTS. cache.yml is owned by new-project-template, but a repo gets
-// its copy by VALUE at creation and nothing ever updates it. Two failures
-// followed (R3-535): 22 repos carried a copy predating the Pages token-mint
-// step and so could not self-provision Pages, and `bundle-picker` acquired a
-// stale copy three days after it was created — by someone copying the workflow
-// from a sibling repo rather than from here — and served a 404 for its cache
-// until it was noticed by hand.
+// WHY THIS EXISTS. cache.yml used to reach each repo BY VALUE, and nothing
+// updated the copies: 22 repos missed the Pages token-mint step (R3-535), and
+// R3-897's keep-set never left the template, so grove evicted a zip a consumer
+// pinned (R3-1331). Since R3-1332 the job lives once, in
+// `.github/workflows/zip-cache.yml`, and every repo's cache.yml is the stub
+// `scripts/zip-cache-stub.mjs` renders, calling it at `@main`
+// (ZIP_CACHE_AUTOMATION_SPEC §4 *Distribution*, §8).
 //
-// WHAT IT COMPARES, AND WHAT IT DELIBERATELY DOES NOT. Only the FUNCTIONAL
-// content: comments and blank lines are stripped, and the `_site/index.html`
-// heredoc is blanked, because a repo is expected to write its own landing copy
-// (`editor` does). Comparing raw bytes would flag every repo forever and the
-// check would be turned off, which is the failure mode this is trying to avoid.
+// WHAT IT COMPARES. A repo's file passes when `parseStub` accepts it: exactly a
+// rendered stub, comments aside, with its own push branches and optional
+// landing page. A full by-value copy, a sha or tag reference, or a hand-added
+// step is drift. The stub has nothing that can lag, so drift is a repo that
+// was never migrated or was edited by hand.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { parseStub, renderStub, SHARED_JOB } from './zip-cache-stub.mjs';
+import { runStubCases } from './zip-cache-stub.test.mjs';
 
 const OWNER = process.env.DRIFT_OWNER ?? 'immediately-run';
 const WORKFLOW = '.github/workflows/cache.yml';
+// The shared job: the one file that pins the CLI (and so the one the pin guard reads).
+const JOB = '.github/workflows/zip-cache.yml';
 
 const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 /**
- * The `@immediately-run/cli` version `cache.yml` pins, read from the workflow
+ * The `@immediately-run/cli` version `zip-cache.yml` pins, read from the workflow
  * itself rather than repeated here. The workflow is the one home for the pin
  * (R6); a second copy in this script would be the drift this file exists to
  * catch, one level up.
@@ -53,7 +58,7 @@ export function pinnedCliVersion(text) {
  */
 export function judgePin(version, view) {
   if (!version) {
-    return { ok: false, reason: 'cache.yml pins no @immediately-run/cli version at all' };
+    return { ok: false, reason: 'zip-cache.yml pins no @immediately-run/cli version at all' };
   }
   let reported;
   try {
@@ -67,15 +72,6 @@ export function judgePin(version, view) {
   return { ok: true, reason: `npm serves @immediately-run/cli@${version}` };
 }
 
-/** Functional content only: no comments, no blank lines, landing copy blanked. */
-export function normalise(text) {
-  return text
-    .replace(/(cat > _site\/index\.html <<'HTML'\n).*?(\n *HTML\n)/s, '$1<<<LANDING COPY>>>$2')
-    .split('\n')
-    .filter((l) => !/^\s*#/.test(l) && l.trim() !== '')
-    .join('\n');
-}
-
 function fetchWorkflow(repo) {
   try {
     const b64 = gh('api', `repos/${OWNER}/${repo}/contents/${WORKFLOW}`, '--jq', '.content');
@@ -85,25 +81,57 @@ function fetchWorkflow(repo) {
   }
 }
 
-if (process.argv.includes('--self-test')) {
-  const base = readFileSync(WORKFLOW, 'utf8');
+/** Every non-archived public repo in the owner's account. Exported for the
+ *  fleet migration (R3-1333), which acts on exactly the repos this check reads.
+ *  `--slurp` cannot be combined with `--jq`, so page through and take one name
+ *  per line. Archived repos are frozen history and are excluded (`showcase`). */
+export function listRepos(run = gh) {
+  return run('api', `orgs/${OWNER}/repos?per_page=100&type=public`, '--paginate',
+    '--jq', '.[] | select(.archived | not) | .name')
+    .split('\n').map((l) => l.trim()).filter(Boolean).sort();
+}
+
+/** Split repos into stubs and drift. PURE — `fetch(repo)` returns the repo's
+ *  cache.yml text, or null when it has none. */
+export function judgeRepos(repos, fetch) {
+  const drifted = [];
+  let checked = 0;
+  for (const repo of repos) {
+    const text = fetch(repo);
+    if (text === null) continue;
+    checked += 1;
+    if (parseStub(text) === null) drifted.push(repo);
+  }
+  return { checked, drifted };
+}
+
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+
+if (isMain && process.argv.includes('--self-test')) {
   const ok = (name, cond) => { if (!cond) { console.error(`✗ self-test: ${name}`); process.exit(1); } console.log(`  ✓ ${name}`); };
-  ok('identical input is not drift', normalise(base) === normalise(base));
-  ok('a comment-only change is not drift', normalise(base) === normalise(base.replace(/^#.*$/m, '# reworded')));
-  ok('custom landing copy is not drift', normalise(base) === normalise(
-    base.replace(/(<<'HTML'\n)(.*?)(\n *HTML)/s, "$1          <title>a fork's own words</title>$3")));
-  ok('a REMOVED step IS drift', normalise(base) !== normalise(base.replace(/ *- name: Mint Pages-enablement token\n/, '')));
-  ok('a changed cli pin IS drift', normalise(base) !== normalise(base.replace(/cli@[0-9.]+/, 'cli@0.0.1')));
-  // The pin guard. Its input is the REAL cache.yml, and its npm lookup is
+  let n = runStubCases(ok);
+  // The real producer: this repo's own committed stub, and its committed job.
+  ok('this repo\'s own cache.yml is a stub', parseStub(readFileSync(WORKFLOW, 'utf8')) !== null);
+  const job = readFileSync(JOB, 'utf8');
+  ok('the job is a reusable workflow', /^on:\n  workflow_call:/m.test(job));
+  ok('the job carries no concurrency group (the stub owns it)', !/^concurrency:/m.test(job));
+  const fakeFiles = { stub: renderStub(), copy: job, none: null, tagged: renderStub().replace(SHARED_JOB, SHARED_JOB.replace('@main', '@v1')) };
+  const judged = judgeRepos(Object.keys(fakeFiles), (r) => fakeFiles[r]);
+  ok('a repo with no cache.yml is not counted', judged.checked === 3);
+  ok('a by-value copy and a tag reference are drift; the stub is not',
+    JSON.stringify(judged.drifted) === JSON.stringify(['copy', 'tagged']));
+  n += 5;
+  // The pin guard. Its input is the REAL zip-cache.yml, and its npm lookup is
   // stubbed so the three outcomes — served, absent, unreachable — are all
   // exercised. Only the last of these is hard to produce on demand in CI.
-  ok('the pin is read out of the real cache.yml', /^[0-9]+\.[0-9]+\.[0-9]+/.test(pinnedCliVersion(base) ?? ''));
-  ok('a cache.yml with no pin is not a pass', judgePin(pinnedCliVersion('runs-on: ubuntu-latest'), () => '1.0.0').ok === false);
+  ok('the pin is read out of the real zip-cache.yml', /^[0-9]+\.[0-9]+\.[0-9]+/.test(pinnedCliVersion(job) ?? ''));
+  ok('a workflow with no pin is not a pass', judgePin(pinnedCliVersion('runs-on: ubuntu-latest'), () => '1.0.0').ok === false);
   ok('a version npm serves passes', judgePin('0.8.2', (v) => v).ok === true);
   ok('a version npm does not serve fails', judgePin('0.0.0-not-real', () => '').ok === false);
   ok('the failure names the version', judgePin('0.0.0-not-real', () => '').reason.includes('0.0.0-not-real'));
   ok('an unreachable registry fails, it does not pass', judgePin('0.8.2', () => { throw new Error('ENOTFOUND'); }).ok === false);
-  console.log('self-test: PASS (11/11)');
+  n += 6;
+  console.log(`self-test: PASS (${n}/${n})`);
   process.exit(0);
 }
 
@@ -113,11 +141,11 @@ if (process.argv.includes('--self-test')) {
 // wrong ships a workflow that fails ETARGET in forty repos at once, which is
 // how it was found: new-project-template's own cache run was red for four days
 // against `cli@0.8.2` while it was still unpublished (R3-623).
-if (process.argv.includes('--check-pin')) {
+if (isMain && process.argv.includes('--check-pin')) {
   // The injected override exists for fault injection: pointing the guard at a
   // version that does not exist is the only way to show it fires, and R2 says
   // inspection is not evidence.
-  const pinned = process.env.DRIFT_PIN_OVERRIDE ?? pinnedCliVersion(readFileSync(WORKFLOW, 'utf8'));
+  const pinned = process.env.DRIFT_PIN_OVERRIDE ?? pinnedCliVersion(readFileSync(JOB, 'utf8'));
   // npm reports "this version does not exist" as an E404 *failure*, not as empty
   // output. That is the expected answer here, not a broken lookup, so it is
   // translated into the empty string and only a genuine failure (offline, auth,
@@ -137,7 +165,7 @@ if (process.argv.includes('--check-pin')) {
   };
   const { ok: pass, reason } = judgePin(pinned, view);
   if (!pass) {
-    console.error(`::error::${WORKFLOW} pins a CLI version npm will not serve — ${reason}. ` +
+    console.error(`::error::${JOB} pins a CLI version npm will not serve — ${reason}. ` +
       `Every repo carrying this workflow fails ETARGET until it publishes. ` +
       `Check https://www.npmjs.com/package/@immediately-run/cli?activeTab=versions`);
     process.exit(1);
@@ -146,30 +174,16 @@ if (process.argv.includes('--check-pin')) {
   process.exit(0);
 }
 
-const want = normalise(readFileSync(WORKFLOW, 'utf8'));
-// `--slurp` cannot be combined with `--jq`, so page through and take one name
-// per line. Archived repos are excluded: they are read-only, so a drifted copy
-// there is frozen history and can never be fixed or matter (`showcase`).
-const repos = gh('api', `orgs/${OWNER}/repos?per_page=100&type=public`, '--paginate',
-  '--jq', '.[] | select(.archived | not) | .name')
-  .split('\n').map((l) => l.trim()).filter(Boolean);
-
-const drifted = [];
-let checked = 0;
-for (const repo of repos.sort()) {
-  const text = fetchWorkflow(repo);
-  if (text === null) continue;
-  checked += 1;
-  if (normalise(text) !== want) drifted.push(repo);
+if (isMain) {
+  const repos = listRepos();
+  const { checked, drifted } = judgeRepos(repos, fetchWorkflow);
+  console.log(`checked ${checked} repo(s) carrying ${WORKFLOW} (of ${repos.length} non-archived public repos)`);
+  if (drifted.length === 0) {
+    console.log('✓ every cache.yml is the stub');
+    process.exit(0);
+  }
+  console.error(`\n✗ ${drifted.length} repo(s) do not carry the stub (scripts/zip-cache-stub.mjs):\n`);
+  for (const r of drifted) console.error(`  - ${r}  https://github.com/${OWNER}/${r}/blob/main/${WORKFLOW}`);
+  console.error('\nReplace the file with renderStub() — the fleet migration (R3-1333) opens these PRs.');
+  process.exit(1);
 }
-
-console.log(`checked ${checked} repo(s) carrying ${WORKFLOW} (of ${repos.length} non-archived public repos)`);
-if (drifted.length === 0) {
-  console.log('✓ no workflow drift');
-  process.exit(0);
-}
-console.error(`\n✗ ${drifted.length} repo(s) have drifted from this template:\n`);
-for (const r of drifted) console.error(`  - ${r}  https://github.com/${OWNER}/${r}/blob/main/${WORKFLOW}`);
-console.error(`\nSync one with:  gh api repos/${OWNER}/<repo>/contents/${WORKFLOW} ...`);
-console.error('or re-copy this repo\'s copy verbatim, preserving that repo\'s _site/index.html copy.');
-process.exit(1);
