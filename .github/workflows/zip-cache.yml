@@ -343,10 +343,12 @@ jobs:
           PUSHED_SHA: ${{ github.sha }}
         run: |
           if [ -n "$LANDING_HTML" ]; then
-            if ! git show "$PUSHED_SHA:$LANDING_HTML" > _site/index.html; then
-              echo "::error::landing-html is set to '$LANDING_HTML', which does not exist at $PUSHED_SHA"
+            # A file only: `git show` of a directory prints a tree listing and exits 0.
+            if [ "$(git cat-file -t "$PUSHED_SHA:$LANDING_HTML" 2>/dev/null)" != "blob" ]; then
+              echo "::error::landing-html is set to '$LANDING_HTML', which is not a file at $PUSHED_SHA"
               exit 1
             fi
+            git show "$PUSHED_SHA:$LANDING_HTML" > _site/index.html
             exit 0
           fi
           cat > _site/index.html <<'HTML'

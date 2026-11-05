@@ -118,12 +118,13 @@ if (isMain && process.argv.includes('--self-test')) {
   // The build loop leaves the checkout at the last kept ref, so the landing page
   // must come from the pushed commit, not the working tree (R3-1332 review r1).
   ok('the landing page is read from the pushed commit', /git show "\$PUSHED_SHA:\$LANDING_HTML"/.test(job) && !/cp "\$LANDING_HTML"/.test(job));
+  ok('the landing page must be a file (a tree would publish a listing)', /git cat-file -t "\$PUSHED_SHA:\$LANDING_HTML"[^\n]*!= "blob"/.test(job));
   const fakeFiles = { stub: renderStub(), copy: job, none: null, tagged: renderStub().replace(SHARED_JOB, SHARED_JOB.replace('@main', '@v1')) };
   const judged = judgeRepos(Object.keys(fakeFiles), (r) => fakeFiles[r]);
   ok('a repo with no cache.yml is not counted', judged.checked === 3);
   ok('a by-value copy and a tag reference are drift; the stub is not',
     JSON.stringify(judged.drifted) === JSON.stringify(['copy', 'tagged']));
-  n += 6;
+  n += 7;
   // The pin guard. Its input is the REAL zip-cache.yml, and its npm lookup is
   // stubbed so the three outcomes — served, absent, unreachable — are all
   // exercised. Only the last of these is hard to produce on demand in CI.
