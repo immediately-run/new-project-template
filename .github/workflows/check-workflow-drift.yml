@@ -1,16 +1,17 @@
-# Fails when an immediately-run app repo's `cache.yml` has drifted from this
-# template's copy.
+# Fails when an immediately-run app repo's `cache.yml` is not the stub that calls
+# this template's shared job (`zip-cache.yml@main`, R3-1332).
 #
-# WHY. `cache.yml` is owned here, but every repo gets its copy BY VALUE at
-# creation and nothing updates it afterwards. By 2026-09-04 that had produced 22
+# WHY. `cache.yml` is owned here, but until R3-1332 every repo got its copy BY VALUE at
+# creation and nothing updated it afterwards. By 2026-09-04 that had produced 22
 # repos whose copy predated the Pages token-mint step — none of them able to
 # self-provision Pages — and `bundle-picker`, which drifted three days after it
 # was created because its workflow was copied from a sibling repo rather than
 # from here, and served a 404 for its cache until someone looked (R3-535).
 #
-# The check compares FUNCTIONAL content only — comments and the _site/index.html
-# landing copy are excluded — so a repo may reword either without going red. See
-# scripts/check-workflow-drift.mjs for why that boundary is where it is.
+# Since R3-1332 the job lives once, in `.github/workflows/zip-cache.yml`, and each
+# repo carries only the stub `scripts/zip-cache-stub.mjs` renders, so a fix here
+# reaches every repo on its next run. The check accepts a stub whose comments are
+# reworded, its own push branches and its own landing page; anything else is drift.
 
 name: Check workflow drift
 
@@ -24,6 +25,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cache.yml'
+      - '.github/workflows/zip-cache.yml'
+      - 'scripts/zip-cache-stub.mjs'
+      - 'scripts/zip-cache-stub.test.mjs'
       - 'scripts/check-workflow-drift.mjs'
       - 'scripts/check-kept-zip-refs.mjs'
       - '.github/workflows/check-workflow-drift.yml'
@@ -48,9 +52,8 @@ jobs:
       - name: Self-test the comparison
         run: node scripts/check-workflow-drift.mjs --self-test
 
-      # The pin has to be servable before the sync is worth anything: a
-      # cache.yml pinning a version npm does not have turns a working zip into
-      # no zip at all, in every repo carrying it. This template's own cache run
+      # The pin has to be servable: a zip-cache.yml pinning a version npm does
+      # not have turns a working zip into no zip at all, in every repo calling it. This template's own cache run
       # was red for four days for exactly that reason (R3-623), and the only
       # thing that surfaced it was a failed zip run in one repo.
       - name: Assert the pinned CLI version is published
@@ -61,7 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-workflow-drift.mjs
 
-      # R3-897 — the keep-set test: drives cache.yml's consumer-pin scan (the
+      # R3-897 — the keep-set test: drives zip-cache.yml's consumer-pin scan (the
       # fenced inline block, extracted from the workflow itself) against a fake
       # gh, over the frozen eviction-case listing (CI has no sibling checkouts).
       - name: Self-test the kept-zip-refs keep-set (R3-897)
