@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { parseStub, renderStub, SHARED_JOB } from './zip-cache-stub.mjs';
 import { runStubCases } from './zip-cache-stub.test.mjs';
+import { runSiteFilesCases } from './site-files.test.mjs';
 
 const OWNER = process.env.DRIFT_OWNER ?? 'immediately-run';
 const WORKFLOW = '.github/workflows/cache.yml';
@@ -110,6 +111,8 @@ const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
 if (isMain && process.argv.includes('--self-test')) {
   const ok = (name, cond) => { if (!cond) { console.error(`✗ self-test: ${name}`); process.exit(1); } console.log(`  ✓ ${name}`); };
   let n = runStubCases(ok);
+  // The site-files step, run for real against a scratch repo (its own file says why).
+  n += runSiteFilesCases(ok);
   // The real producer: this repo's own committed stub, and its committed job.
   ok('this repo\'s own cache.yml is a stub', parseStub(readFileSync(WORKFLOW, 'utf8')) !== null);
   const job = readFileSync(JOB, 'utf8');

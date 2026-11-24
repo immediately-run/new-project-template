@@ -24,18 +24,48 @@ const HEADER = `# immediately.run cache — publishes this repo's pre-cached zip
 const BRANCH_RE = /^[A-Za-z0-9._\/-]+$/;
 const PATH_RE = /^[A-Za-z0-9._\/-]+$/;
 
+// Names the job writes at the Pages root itself, so a site file may not take them.
+const RESERVED_NAMES = new Set(['index.html', 'cached_repositories']);
+
+/**
+ * Why `siteFiles` cannot be published as asked, or `null` when it can. The job
+ * refuses the same lists (zip-cache.yml, *Publish site files*); refusing them
+ * here as well means a bad list fails when the stub is rendered, not on the
+ * repo's next push.
+ */
+export function siteFilesProblem(siteFiles) {
+  if (!Array.isArray(siteFiles)) return `siteFiles must be a list, got ${JSON.stringify(siteFiles)}`;
+  const seen = new Map();
+  for (const path of siteFiles) {
+    if (typeof path !== 'string' || !PATH_RE.test(path) || path.startsWith('/') || path.includes('..')) {
+      return `${JSON.stringify(path)} is not a plain path in the repository`;
+    }
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    if (name === '' || name === '.' || RESERVED_NAMES.has(name)) return `${path} would be published as '${name}', which the job writes itself`;
+    if (seen.has(name)) return `${seen.get(name)} and ${path} would both be published as '${name}'`;
+    seen.set(name, path);
+  }
+  return null;
+}
+
 /**
  * The stub for one repo. `branches` is the push trigger's list (a repo whose
  * default branch is not `main` names its own); `landingHtml` is an optional
- * path in the repo, passed to the job as `landing-html`.
+ * path in the repo, passed to the job as `landing-html`; `siteFiles` is an
+ * optional list of repo paths, passed as `site-files` and published at the Pages
+ * root under their own file names. An empty list writes no `site-files` line, so
+ * a stub without site files is unchanged from before the input existed.
  */
-export function renderStub({ branches = ['main'], landingHtml = '' } = {}) {
+export function renderStub({ branches = ['main'], landingHtml = '', siteFiles = [] } = {}) {
   if (!Array.isArray(branches) || branches.length === 0 || !branches.every((b) => BRANCH_RE.test(b))) {
     throw new Error(`renderStub: branches must be a non-empty list of plain branch names, got ${JSON.stringify(branches)}`);
   }
   if (landingHtml !== '' && !PATH_RE.test(landingHtml)) {
     throw new Error(`renderStub: landingHtml must be a plain repo path, got ${JSON.stringify(landingHtml)}`);
   }
+  const problem = siteFilesProblem(siteFiles);
+  if (problem) throw new Error(`renderStub: ${problem}`);
+  const siteFilesLine = siteFiles.length ? `\n      site-files: '${siteFiles.join(' ')}'` : '';
   return `${HEADER}
 
 name: Cache for immediately.run
@@ -60,7 +90,7 @@ jobs:
   cache:
     uses: ${SHARED_JOB}
     with:
-      landing-html: '${landingHtml}'
+      landing-html: '${landingHtml}'${siteFilesLine}
     secrets:
       DEPLOY_APP_ID: \${{ secrets.DEPLOY_APP_ID }}
       DEPLOY_APP_PRIVATE_KEY: \${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
@@ -77,17 +107,23 @@ function functional(text) {
 }
 
 /**
- * Read a repo's `cache.yml` as a stub: `{ branches, landingHtml }` when the file
- * is exactly what `renderStub` would produce for those options (comments aside),
- * else `null`. A reference other than `@main` — a sha, a tag, another branch —
- * an extra step, or a missing secret is `null`, which the drift check reports.
+ * Read a repo's `cache.yml` as a stub: `{ branches, landingHtml, siteFiles }`
+ * when the file is exactly what `renderStub` would produce for those options
+ * (comments aside), else `null`. A reference other than `@main` — a sha, a tag,
+ * another branch — an extra step, or a missing secret is `null`, which the drift
+ * check reports.
  */
 export function parseStub(text) {
   if (typeof text !== 'string') return null;
   const b = /^ {4}branches: \[([^\]\n]*)\]$/m.exec(text);
   const l = /^ {6}landing-html: '([^'\n]*)'$/m.exec(text);
   if (!b || !l) return null;
-  const opts = { branches: b[1].split(',').map((s) => s.trim()).filter(Boolean), landingHtml: l[1] };
+  const f = /^ {6}site-files: '([^'\n]*)'$/m.exec(text);
+  const opts = {
+    branches: b[1].split(',').map((s) => s.trim()).filter(Boolean),
+    landingHtml: l[1],
+    siteFiles: f ? f[1].split(' ').filter(Boolean) : [],
+  };
   let expected;
   try {
     expected = renderStub(opts);

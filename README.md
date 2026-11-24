@@ -37,8 +37,10 @@ repo's **own GitHub Pages**. The file is a short stub: the job itself lives in
 this template's
 [`.github/workflows/zip-cache.yml`](./.github/workflows/zip-cache.yml), called at
 `@main`, so a fix to it reaches every repo on its next run. Don't edit the stub
-by hand; to serve your own Pages root page, pass `landing-html: <path>` (render
-the stub with `scripts/zip-cache-stub.mjs`). immediately.run finds it automatically at
+by hand; to serve your own Pages root page, pass `landing-html: <path>`, and to
+publish more files beside it (favicons, a preview image, `llms.txt`), pass
+`site-files: '<path> <path> …'`: each is served at the Pages root under its own
+file name (render the stub with `scripts/zip-cache-stub.mjs`). immediately.run finds it automatically at
 `https://<owner>.github.io/<repo>/cached_repositories/main.zip` — or, for a
 commit-pinned library dependency, `cached_repositories/<sha>.zip` — and loads from
 there — falling back to the API if it's missing.
