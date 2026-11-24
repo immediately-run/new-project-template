@@ -28,6 +28,7 @@ on:
       - '.github/workflows/zip-cache.yml'
       - 'scripts/zip-cache-stub.mjs'
       - 'scripts/zip-cache-stub.test.mjs'
+      - 'scripts/site-files.test.mjs'
       - 'scripts/check-workflow-drift.mjs'
       - 'scripts/check-kept-zip-refs.mjs'
       - '.github/workflows/check-workflow-drift.yml'

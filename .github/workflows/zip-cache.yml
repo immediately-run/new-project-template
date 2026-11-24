@@ -77,6 +77,15 @@ on:
         type: string
         required: false
         default: ''
+      site-files:
+        description: >-
+          Optional space-separated paths, in the caller's checkout, of more files
+          to publish at the Pages root, each under its own file name:
+          `site/favicon-16.png` is served at /<repo>/favicon-16.png. Empty (the
+          default) publishes none.
+        type: string
+        required: false
+        default: ''
     secrets:
       DEPLOY_APP_ID:
         required: false
@@ -357,6 +366,46 @@ jobs:
           <p>This site hosts a pre-cached build of this repository for
           <a href="https://immediately.run">immediately.run</a>.</p>
           HTML
+
+      # More files at the Pages root, beside the landing page: a site's favicons,
+      # its preview image, its llms.txt. Each path is published under its own file
+      # name. Read from the PUSHED commit like the landing page, and only a regular
+      # file is published (not a tree, which `git show` would print as a listing,
+      # and not a symlink, whose blob is its target's path). A name the job writes
+      # itself, two paths with one name, or a path that is not plain fails the run
+      # rather than publishing something other than what the stub asked for. The
+      # input reaches the script only through the environment, never as an expression.
+      # scripts/site-files.test.mjs runs this block against a scratch repo.
+      - name: Publish site files
+        if: inputs.site-files != ''
+        env:
+          SITE_FILES: ${{ inputs.site-files }}
+          PUSHED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          set -f  # the list is split on spaces; never expand it as a glob
+          declare -A seen=()
+          for path in $SITE_FILES; do
+            case "$path" in
+              /*|*..*|*[!A-Za-z0-9._/-]*)
+                echo "::error::site-files: '$path' is not a plain path in the repository"; exit 1 ;;
+            esac
+            name="${path##*/}"
+            case "$name" in
+              ''|.|index.html|cached_repositories)
+                echo "::error::site-files: '$path' would be published as '$name', which the job writes itself"; exit 1 ;;
+            esac
+            if [ -n "${seen[$name]:-}" ]; then
+              echo "::error::site-files: '${seen[$name]}' and '$path' would both be published as '$name'"; exit 1
+            fi
+            seen[$name]="$path"
+            mode="$(git ls-tree "$PUSHED_SHA" -- "$path" | cut -d' ' -f1)"
+            if [ "$mode" != 100644 ] && [ "$mode" != 100755 ]; then
+              echo "::error::site-files: '$path' is not a regular file at $PUSHED_SHA"; exit 1
+            fi
+            git show "$PUSHED_SHA:$path" > "_site/$name"
+            echo "published $path as $name"
+          done
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
